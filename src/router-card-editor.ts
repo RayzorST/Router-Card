@@ -1,13 +1,49 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { LovelaceCardEditor } from 'custom-card-helpers';
+
+interface TapActionConfig {
+  action: 'more-info' | 'toggle' | 'call-service' | 'navigate' | 'url' | 'none';
+  navigation_path?: string;
+  url_path?: string;
+  service?: string;
+  service_data?: Record<string, any>;
+}
 
 interface SensorConfig {
   entity: string;
   name: string;
   unit?: string;
   icon?: string;
-  show_bar?: boolean;
+  display_type?: 'bar' | 'number' | 'graph' | 'badge';
+  min?: number;
+  max?: number;
+  tap_action?: TapActionConfig;
+}
+
+interface StatusSectionConfig {
+  enabled: boolean;
+  left_entity?: string;
+  left_label?: string;
+  right_entity?: string;
+  right_label?: string;
+  tap_action?: TapActionConfig;
+}
+
+interface UpdateSectionConfig {
+  enabled: boolean;
+  entity?: string;
+  label?: string;
+  tap_action?: TapActionConfig;
+}
+
+interface RebootButtonConfig {
+  enabled: boolean;
+  service?: string;
+  service_data?: Record<string, any>;
+  confirmation?: boolean;
+  label?: string;
+  icon?: string;
 }
 
 interface RouterCardEditorConfig {
@@ -16,8 +52,9 @@ interface RouterCardEditorConfig {
   icon?: string;
   controller?: boolean;
   theme?: string;
-  wan_status_entity?: string;
-  wan_ip_entity?: string;
+  update_section?: UpdateSectionConfig;
+  status_section?: StatusSectionConfig;
+  reboot_button?: RebootButtonConfig;
   top_sensors?: SensorConfig[];
   bottom_sensors?: SensorConfig[];
   [key: string]: any;
@@ -25,18 +62,42 @@ interface RouterCardEditorConfig {
 
 const VALID_CONFIG_KEYS = [
   'type', 'name', 'icon', 'controller', 'theme',
-  'wan_status_entity', 'wan_ip_entity',
-  'top_sensors', 'bottom_sensors',
+  'update_section', 'status_section', 'reboot_button', 'top_sensors', 'bottom_sensors',
 ];
 
 @customElement('router-card-editor')
 export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
   @property() public hass!: any;
   @state() private _config!: RouterCardEditorConfig;
-  @state() private _activeTab: 'wan' | 'top' | 'bottom' | 'general' = 'general';
+  @state() private _activeTab: 'general' | 'status' | 'top' | 'bottom' = 'general';
 
   public setConfig(config: RouterCardEditorConfig): void {
-    this._config = config;
+    this._config = {
+      ...config,
+      update_section: config.update_section || {
+        enabled: true,
+        entity: '',
+        label: 'Update Available',
+        tap_action: { action: 'more-info' },
+      },
+      status_section: config.status_section || {
+        enabled: true,
+        left_entity: '',
+        left_label: 'Status',
+        right_entity: '',
+        right_label: 'IP',
+        tap_action: { action: 'more-info' },
+      },
+      reboot_button: config.reboot_button || {
+        enabled: false,
+        service: 'button.router_reboot_press',
+        confirmation: true,
+        label: '',
+        icon: 'mdi:restart',
+      },
+      top_sensors: config.top_sensors || [],
+      bottom_sensors: config.bottom_sensors || [],
+    };
   }
 
   protected render() {
@@ -44,20 +105,44 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
       return html``;
     }
 
+    const updateSection = this._config.update_section || {
+      enabled: true,
+      entity: '',
+      label: 'Update Available',
+      tap_action: { action: 'more-info' },
+    };
+
+    const statusSection = this._config.status_section || {
+      enabled: true,
+      left_entity: '',
+      left_label: 'Status',
+      right_entity: '',
+      right_label: 'IP',
+      tap_action: { action: 'more-info' },
+    };
+
+    const rebootConfig = this._config.reboot_button || {
+      enabled: false,
+      service: 'button.router_reboot_press',
+      confirmation: true,
+      label: '',
+      icon: 'mdi:restart',
+    };
+
     return html`
       <div class="editor">
         <!-- Tabs -->
         <div class="tabs">
-          <button class="tab ${this._activeTab === 'general' ? 'active' : ''}" @click=${() => this._activeTab = 'general'}>
+          <button class="tab ${this._activeTab === 'general' ? 'active' : ''}" @click=${() => this._setActiveTab('general')}>
             <ha-icon icon="mdi:cog"></ha-icon> General
           </button>
-          <button class="tab ${this._activeTab === 'wan' ? 'active' : ''}" @click=${() => this._activeTab = 'wan'}>
-            <ha-icon icon="mdi:wan"></ha-icon> WAN
+          <button class="tab ${this._activeTab === 'status' ? 'active' : ''}" @click=${() => this._setActiveTab('status')}>
+            <ha-icon icon="mdi:wan"></ha-icon> Status
           </button>
-          <button class="tab ${this._activeTab === 'top' ? 'active' : ''}" @click=${() => this._activeTab = 'top'}>
+          <button class="tab ${this._activeTab === 'top' ? 'active' : ''}" @click=${() => this._setActiveTab('top')}>
             <ha-icon icon="mdi:view-grid"></ha-icon> Top (Cards)
           </button>
-          <button class="tab ${this._activeTab === 'bottom' ? 'active' : ''}" @click=${() => this._activeTab = 'bottom'}>
+          <button class="tab ${this._activeTab === 'bottom' ? 'active' : ''}" @click=${() => this._setActiveTab('bottom')}>
             <ha-icon icon="mdi:format-list-bulleted"></ha-icon> Bottom (List)
           </button>
         </div>
@@ -105,40 +190,206 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
                 </ha-select>
               </div>
             </div>
-          </div>
-        ` : null}
-
-        <!-- WAN Tab -->
-        ${this._activeTab === 'wan' ? html`
-          <div class="tab-content">
+            
+            <!-- Update Section in General Tab -->
+            <div class="section-divider">
+              <span class="section-title">Update Section</span>
+            </div>
+            <div class="editor-row">
+              <ha-formfield label="Enable Update Section">
+                <ha-switch
+                  .checked=${updateSection.enabled !== false}
+                  .configValue=${'update_section'}
+                  .fieldValue=${'enabled'}
+                  @change=${this._nestedValueChanged}
+                ></ha-switch>
+              </ha-formfield>
+            </div>
             <div class="editor-row">
               <div class="editor-item">
                 <ha-entity-picker
                   .hass=${this.hass}
-                  .value=${this._config.wan_status_entity || ''}
-                  .configValue=${'wan_status_entity'}
-                  @value-changed=${this._valueChanged}
-                  label="WAN Status Entity"
+                  .value=${updateSection.entity || ''}
+                  .configValue=${'update_section'}
+                  .fieldValue=${'entity'}
+                  @value-changed=${this._nestedValueChanged}
+                  label="Update Entity"
+                  allow-custom-entity
+                  include-domains='["update", "binary_sensor"]'
+                ></ha-entity-picker>
+              </div>
+              <div class="editor-item">
+                <ha-textfield
+                  .value=${updateSection.label || 'Update Available'}
+                  .configValue=${'update_section'}
+                  .fieldValue=${'label'}
+                  @input=${this._nestedValueChanged}
+                  label="Label"
+                ></ha-textfield>
+              </div>
+            </div>
+            <div class="editor-row">
+              <div class="editor-item">
+                <ha-select
+                  .value=${updateSection.tap_action?.action || 'more-info'}
+                  .configValue=${'update_section'}
+                  .fieldValue=${'tap_action'}
+                  @selected=${this._tapActionChanged}
+                  @closed=${(ev: any) => ev.stopPropagation()}
+                  label="Tap Action"
+                >
+                  <mwc-list-item value="more-info">More Info</mwc-list-item>
+                  <mwc-list-item value="navigate">Navigate</mwc-list-item>
+                  <mwc-list-item value="url">URL</mwc-list-item>
+                  <mwc-list-item value="call-service">Call Service</mwc-list-item>
+                  <mwc-list-item value="none">None</mwc-list-item>
+                </ha-select>
+              </div>
+            </div>
+            
+            <!-- Reboot Button Section in General Tab -->
+            <div class="section-divider">
+              <span class="section-title">Reboot Button</span>
+            </div>
+            <div class="editor-row">
+              <ha-formfield label="Enable Reboot Button">
+                <ha-switch
+                  .checked=${rebootConfig.enabled !== false}
+                  .configValue=${'reboot_button'}
+                  .fieldValue=${'enabled'}
+                  @change=${this._nestedValueChanged}
+                ></ha-switch>
+              </ha-formfield>
+            </div>
+            <div class="editor-row">
+              <div class="editor-item">
+                <ha-textfield
+                  .value=${rebootConfig.service || 'button.router_reboot_press'}
+                  .configValue=${'reboot_button'}
+                  .fieldValue=${'service'}
+                  @input=${this._nestedValueChanged}
+                  label="Service"
+                  placeholder="button.router_reboot_press"
+                ></ha-textfield>
+              </div>
+              <div class="editor-item">
+                <ha-textfield
+                  .value=${rebootConfig.label || ''}
+                  .configValue=${'reboot_button'}
+                  .fieldValue=${'label'}
+                  @input=${this._nestedValueChanged}
+                  label="Button Label (optional)"
+                  placeholder="Leave empty for icon only"
+                ></ha-textfield>
+              </div>
+            </div>
+            <div class="editor-row">
+              <div class="editor-item">
+                <ha-icon-picker
+                  .value=${rebootConfig.icon || 'mdi:restart'}
+                  .configValue=${'reboot_button'}
+                  .fieldValue=${'icon'}
+                  @value-changed=${this._nestedValueChanged}
+                  label="Button Icon"
+                ></ha-icon-picker>
+              </div>
+              <ha-formfield label="Show Confirmation">
+                <ha-switch
+                  .checked=${rebootConfig.confirmation !== false}
+                  .configValue=${'reboot_button'}
+                  .fieldValue=${'confirmation'}
+                  @change=${this._nestedValueChanged}
+                ></ha-switch>
+              </ha-formfield>
+            </div>
+            <div class="info-box">
+              <ha-icon icon="mdi:information"></ha-icon>
+              <span>Leave label empty to show only the icon. Service example: button.router_reboot_press</span>
+            </div>
+          </div>
+        ` : nothing}
+
+        <!-- Status Tab -->
+        ${this._activeTab === 'status' ? html`
+          <div class="tab-content">
+            <div class="editor-row">
+              <ha-formfield label="Enable Status Section">
+                <ha-switch
+                  .checked=${statusSection.enabled !== false}
+                  .configValue=${'status_section'}
+                  .fieldValue=${'enabled'}
+                  @change=${this._nestedValueChanged}
+                ></ha-switch>
+              </ha-formfield>
+            </div>
+            <div class="editor-row">
+              <div class="editor-item">
+                <ha-entity-picker
+                  .hass=${this.hass}
+                  .value=${statusSection.left_entity || ''}
+                  .configValue=${'status_section'}
+                  .fieldValue=${'left_entity'}
+                  @value-changed=${this._nestedValueChanged}
+                  label="Left Entity"
                   allow-custom-entity
                 ></ha-entity-picker>
               </div>
               <div class="editor-item">
+                <ha-textfield
+                  .value=${statusSection.left_label || 'Status'}
+                  .configValue=${'status_section'}
+                  .fieldValue=${'left_label'}
+                  @input=${this._nestedValueChanged}
+                  label="Left Label"
+                ></ha-textfield>
+              </div>
+            </div>
+            <div class="editor-row">
+              <div class="editor-item">
                 <ha-entity-picker
                   .hass=${this.hass}
-                  .value=${this._config.wan_ip_entity || ''}
-                  .configValue=${'wan_ip_entity'}
-                  @value-changed=${this._valueChanged}
-                  label="WAN IP Entity"
+                  .value=${statusSection.right_entity || ''}
+                  .configValue=${'status_section'}
+                  .fieldValue=${'right_entity'}
+                  @value-changed=${this._nestedValueChanged}
+                  label="Right Entity"
                   allow-custom-entity
                 ></ha-entity-picker>
+              </div>
+              <div class="editor-item">
+                <ha-textfield
+                  .value=${statusSection.right_label || 'IP'}
+                  .configValue=${'status_section'}
+                  .fieldValue=${'right_label'}
+                  @input=${this._nestedValueChanged}
+                  label="Right Label"
+                ></ha-textfield>
+              </div>
+            </div>
+            <div class="editor-row">
+              <div class="editor-item">
+                <ha-select
+                  .value=${statusSection.tap_action?.action || 'more-info'}
+                  .configValue=${'status_section'}
+                  .fieldValue=${'tap_action'}
+                  @selected=${this._tapActionChanged}
+                  @closed=${(ev: any) => ev.stopPropagation()}
+                  label="Tap Action"
+                >
+                  <mwc-list-item value="more-info">More Info</mwc-list-item>
+                  <mwc-list-item value="navigate">Navigate</mwc-list-item>
+                  <mwc-list-item value="url">URL</mwc-list-item>
+                  <mwc-list-item value="call-service">Call Service</mwc-list-item>
+                  <mwc-list-item value="none">None</mwc-list-item>
+                </ha-select>
               </div>
             </div>
             <div class="info-box">
               <ha-icon icon="mdi:information"></ha-icon>
-              <span>If both entities exist, status shows on left and IP on right. If only one exists, it shows on left.</span>
+              <span>For controller: Use WAN status and IP. For repeater: Use connection status and router IP.</span>
             </div>
           </div>
-        ` : null}
+        ` : nothing}
 
         <!-- Top Sensors Tab -->
         ${this._activeTab === 'top' ? html`
@@ -149,7 +400,7 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
                 <ha-icon icon="mdi:plus"></ha-icon> Add Sensor
               </ha-button>
             </div>
-            ${this._config.top_sensors?.map((sensor, index) => html`
+            ${this._config.top_sensors?.map((sensor: SensorConfig, index: number) => html`
               <div class="sensor-row">
                 <div class="sensor-item">
                   <ha-entity-picker
@@ -184,25 +435,37 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
                   ></ha-textfield>
                 </div>
                 <div class="sensor-item">
-                  <ha-icon-picker
-                    .value=${sensor.icon || ''}
+                    <ha-select
+                    .value=${sensor.display_type || 'number'}
                     .configValue=${'top_sensors'}
                     .sensorIndex=${index}
-                    .sensorField=${'icon'}
-                    @value-changed=${this._sensorValueChanged}
-                    label="Icon"
-                  ></ha-icon-picker>
+                    .sensorField=${'display_type'}
+                    @selected=${this._sensorValueChanged}
+                    @closed=${(ev: any) => ev.stopPropagation()}
+                    label="Display Type"
+                    >
+                    <mwc-list-item value="number">Number</mwc-list-item>
+                    <mwc-list-item value="bar">Progress Bar</mwc-list-item>
+                    <mwc-list-item value="graph">Graph (HA Sensor Style)</mwc-list-item>
+                    <mwc-list-item value="badge">Badge</mwc-list-item>
+                    </ha-select>
                 </div>
-                <div class="sensor-item checkbox">
-                  <ha-formfield label="Bar">
-                    <ha-switch
-                      .checked=${sensor.show_bar === true}
-                      .configValue=${'top_sensors'}
-                      .sensorIndex=${index}
-                      .sensorField=${'show_bar'}
-                      @change=${this._sensorValueChanged}
-                    ></ha-switch>
-                  </ha-formfield>
+                <div class="sensor-item">
+                  <ha-select
+                    .value=${sensor.tap_action?.action || 'more-info'}
+                    .configValue=${'top_sensors'}
+                    .sensorIndex=${index}
+                    .sensorField=${'tap_action'}
+                    @selected=${this._sensorTapActionChanged}
+                    @closed=${(ev: any) => ev.stopPropagation()}
+                    label="Tap Action"
+                  >
+                    <mwc-list-item value="more-info">More Info</mwc-list-item>
+                    <mwc-list-item value="navigate">Navigate</mwc-list-item>
+                    <mwc-list-item value="url">URL</mwc-list-item>
+                    <mwc-list-item value="call-service">Call Service</mwc-list-item>
+                    <mwc-list-item value="none">None</mwc-list-item>
+                  </ha-select>
                 </div>
                 <ha-icon-button
                   icon="mdi:delete"
@@ -211,18 +474,18 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
               </div>
             `) || html`<div class="empty-state">No sensors configured. Click "Add Sensor" to start.</div>`}
           </div>
-        ` : null}
+        ` : nothing}
 
         <!-- Bottom Sensors Tab -->
         ${this._activeTab === 'bottom' ? html`
           <div class="tab-content">
             <div class="sensors-header">
-              <span>Bottom Section (List View)</span>
+              <span>Bottom Section (List View - 2 Columns)</span>
               <ha-button @click=${() => this._addSensor('bottom_sensors')}>
                 <ha-icon icon="mdi:plus"></ha-icon> Add Sensor
               </ha-button>
             </div>
-            ${this._config.bottom_sensors?.map((sensor, index) => html`
+            ${this._config.bottom_sensors?.map((sensor: SensorConfig, index: number) => html`
               <div class="sensor-row">
                 <div class="sensor-item">
                   <ha-entity-picker
@@ -257,14 +520,21 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
                   ></ha-textfield>
                 </div>
                 <div class="sensor-item">
-                  <ha-icon-picker
-                    .value=${sensor.icon || ''}
+                  <ha-select
+                    .value=${sensor.tap_action?.action || 'more-info'}
                     .configValue=${'bottom_sensors'}
                     .sensorIndex=${index}
-                    .sensorField=${'icon'}
-                    @value-changed=${this._sensorValueChanged}
-                    label="Icon"
-                  ></ha-icon-picker>
+                    .sensorField=${'tap_action'}
+                    @selected=${this._sensorTapActionChanged}
+                    @closed=${(ev: any) => ev.stopPropagation()}
+                    label="Tap Action"
+                  >
+                    <mwc-list-item value="more-info">More Info</mwc-list-item>
+                    <mwc-list-item value="navigate">Navigate</mwc-list-item>
+                    <mwc-list-item value="url">URL</mwc-list-item>
+                    <mwc-list-item value="call-service">Call Service</mwc-list-item>
+                    <mwc-list-item value="none">None</mwc-list-item>
+                  </ha-select>
                 </div>
                 <ha-icon-button
                   icon="mdi:delete"
@@ -273,9 +543,13 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
               </div>
             `) || html`<div class="empty-state">No sensors configured. Click "Add Sensor" to start.</div>`}
           </div>
-        ` : null}
+        ` : nothing}
       </div>
     `;
+  }
+
+  private _setActiveTab(tab: 'general' | 'status' | 'top' | 'bottom'): void {
+    this._activeTab = tab;
   }
 
   private _valueChanged(ev: any): void {
@@ -299,6 +573,54 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
       newConfig[configValue] = value;
     }
 
+    this._config = newConfig;
+    this._dispatchConfigChange(newConfig);
+  }
+
+  private _nestedValueChanged(ev: any): void {
+    const target = ev.target as any;
+    const configValue = target.configValue as string;
+    const fieldValue = target.fieldValue as string;
+    const value = target.checked !== undefined ? target.checked : target.value;
+
+    if (!this._config || !configValue || !fieldValue) {
+      return;
+    }
+
+    const newConfig = { ...this._config };
+    const nestedObject = { ...(newConfig[configValue] || {}) };
+
+    if (value === '' || value === undefined) {
+      delete nestedObject[fieldValue];
+    } else {
+      nestedObject[fieldValue] = value;
+    }
+
+    newConfig[configValue] = nestedObject;
+    this._config = newConfig;
+    this._dispatchConfigChange(newConfig);
+  }
+
+  private _tapActionChanged(ev: any): void {
+    const target = ev.target as any;
+    const configValue = target.configValue as string;
+    const fieldValue = target.fieldValue as string;
+    const actionValue = target.value;
+
+    if (!this._config || !configValue || !fieldValue) {
+      return;
+    }
+
+    const newConfig = { ...this._config };
+    const nestedObject = { ...(newConfig[configValue] || {}) };
+
+    if (actionValue === 'none') {
+      delete nestedObject[fieldValue];
+    } else {
+      nestedObject[fieldValue] = { action: actionValue };
+    }
+
+    newConfig[configValue] = nestedObject;
     this._config = newConfig;
     this._dispatchConfigChange(newConfig);
   }
@@ -332,10 +654,44 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
     this._dispatchConfigChange(newConfig);
   }
 
+  private _sensorTapActionChanged(ev: any): void {
+    const target = ev.target as any;
+    const configValue = target.configValue as string;
+    const sensorIndex = target.sensorIndex as number;
+    const sensorField = target.sensorField as string;
+    const actionValue = target.value;
+
+    if (!this._config || !configValue || sensorIndex === undefined || !sensorField) {
+      return;
+    }
+
+    const newConfig = { ...this._config };
+    const sensorsArray = [...(newConfig[configValue] || [])];
+
+    if (!sensorsArray[sensorIndex]) {
+      sensorsArray[sensorIndex] = {};
+    }
+
+    if (actionValue === 'none') {
+      delete sensorsArray[sensorIndex][sensorField];
+    } else {
+      sensorsArray[sensorIndex][sensorField] = { action: actionValue };
+    }
+
+    newConfig[configValue] = sensorsArray;
+    this._config = newConfig;
+    this._dispatchConfigChange(newConfig);
+  }
+
   private _addSensor(section: 'top_sensors' | 'bottom_sensors'): void {
     const newConfig = { ...this._config };
     const sensorsArray = [...(newConfig[section] || [])];
-    sensorsArray.push({ entity: '', name: 'New Sensor' });
+    sensorsArray.push({ 
+      entity: '', 
+      name: 'New Sensor', 
+      display_type: section === 'top_sensors' ? 'bar' : 'number',
+      tap_action: { action: 'more-info' },
+    });
     newConfig[section] = sensorsArray;
     this._config = newConfig;
     this._dispatchConfigChange(newConfig);
@@ -420,7 +776,19 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
 
       .editor-item {
         flex: 1;
-        min-width: 200px;
+        min-width: 150px;
+      }
+
+      .section-divider {
+        margin: 16px 0 8px 0;
+        padding-top: 16px;
+        border-top: 1px solid var(--divider-color, #e0e0e0);
+      }
+
+      .section-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--primary-text-color, #333);
       }
 
       .info-box {
@@ -460,14 +828,6 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
       .sensor-item {
         flex: 1;
         min-width: 120px;
-      }
-
-      .sensor-item.checkbox {
-        flex: 0;
-        min-width: auto;
-        display: flex;
-        align-items: center;
-        height: 52px;
       }
 
       .empty-state {
