@@ -249,64 +249,37 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
             
             <!-- Reboot Button Section in General Tab -->
             <div class="section-divider">
-              <span class="section-title">Reboot Button</span>
+            <span class="section-title">Reboot Button</span>
             </div>
             <div class="editor-row">
-              <ha-formfield label="Enable Reboot Button">
+            <ha-formfield label="Enable Reboot Button">
                 <ha-switch
-                  .checked=${rebootConfig.enabled !== false}
-                  .configValue=${'reboot_button'}
-                  .fieldValue=${'enabled'}
-                  @change=${this._nestedValueChanged}
+                .checked=${rebootConfig.enabled !== false}
+                .configValue=${'reboot_button'}
+                .fieldValue=${'enabled'}
+                @change=${this._nestedValueChanged}
                 ></ha-switch>
-              </ha-formfield>
+            </ha-formfield>
             </div>
             <div class="editor-row">
-              <div class="editor-item">
+            <div class="editor-item">
                 <ha-textfield
-                  .value=${rebootConfig.service || 'button.router_reboot_press'}
-                  .configValue=${'reboot_button'}
-                  .fieldValue=${'service'}
-                  @input=${this._nestedValueChanged}
-                  label="Service"
-                  placeholder="button.router_reboot_press"
+                .value=${rebootConfig.service || 'button.router_reboot_press'}
+                .configValue=${'reboot_button'}
+                .fieldValue=${'service'}
+                @input=${this._nestedValueChanged}
+                label="Service"
                 ></ha-textfield>
-              </div>
-              <div class="editor-item">
-                <ha-textfield
-                  .value=${rebootConfig.label || ''}
-                  .configValue=${'reboot_button'}
-                  .fieldValue=${'label'}
-                  @input=${this._nestedValueChanged}
-                  label="Button Label (optional)"
-                  placeholder="Leave empty for icon only"
-                ></ha-textfield>
-              </div>
             </div>
-            <div class="editor-row">
-              <div class="editor-item">
-                <ha-icon-picker
-                  .value=${rebootConfig.icon || 'mdi:restart'}
-                  .configValue=${'reboot_button'}
-                  .fieldValue=${'icon'}
-                  @value-changed=${this._nestedValueChanged}
-                  label="Button Icon"
-                ></ha-icon-picker>
-              </div>
-              <ha-formfield label="Show Confirmation">
+            <ha-formfield label="Show Confirmation">
                 <ha-switch
-                  .checked=${rebootConfig.confirmation !== false}
-                  .configValue=${'reboot_button'}
-                  .fieldValue=${'confirmation'}
-                  @change=${this._nestedValueChanged}
+                .checked=${rebootConfig.confirmation !== false}
+                .configValue=${'reboot_button'}
+                .fieldValue=${'confirmation'}
+                @change=${this._nestedValueChanged}
                 ></ha-switch>
-              </ha-formfield>
+            </ha-formfield>
             </div>
-            <div class="info-box">
-              <ha-icon icon="mdi:information"></ha-icon>
-              <span>Leave label empty to show only the icon. Service example: button.router_reboot_press</span>
-            </div>
-          </div>
         ` : nothing}
 
         <!-- Status Tab -->
@@ -383,10 +356,6 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
                   <mwc-list-item value="none">None</mwc-list-item>
                 </ha-select>
               </div>
-            </div>
-            <div class="info-box">
-              <ha-icon icon="mdi:information"></ha-icon>
-              <span>For controller: Use WAN status and IP. For repeater: Use connection status and router IP.</span>
             </div>
           </div>
         ` : nothing}

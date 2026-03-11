@@ -3,7 +3,6 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { HomeAssistant, LovelaceCard, LovelaceCardEditor } from 'custom-card-helpers';
 import './router-card-editor';
 
-// Типы для конфигурации
 interface SensorConfig {
   entity: string;
   name: string;
@@ -54,8 +53,6 @@ interface RebootButtonConfig {
   service?: string;
   service_data?: Record<string, any>;
   confirmation?: boolean;
-  label?: string;
-  icon?: string;
 }
 
 interface RouterCardConfig {
@@ -77,10 +74,16 @@ interface SensorData {
   unit?: string;
 }
 
+interface HistoryData {
+  state: string;
+  last_changed: string;
+}
+
 @customElement('router-card')
 export class RouterCard extends LitElement implements LovelaceCard {
   @property() public hass!: HomeAssistant;
   @state() private config!: RouterCardConfig;
+  @state() private graphData: Record<string, HistoryData[]> = {};
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
     return document.createElement('router-card-editor');
@@ -111,8 +114,6 @@ export class RouterCard extends LitElement implements LovelaceCard {
         enabled: false,
         service: 'button.router_reboot_press',
         confirmation: true,
-        label: '',
-        icon: 'mdi:restart',
       },
       top_sensors: [
         { entity: 'sensor.router_cpu_load', name: 'CPU Load', unit: '%', display_type: 'bar', tap_action: { action: 'more-info' } },
@@ -133,6 +134,68 @@ export class RouterCard extends LitElement implements LovelaceCard {
     this.config = {
       ...config,
     };
+    this._fetchGraphData();
+  }
+
+  protected shouldUpdate(changedProps: any): boolean {
+    if (changedProps.has('hass')) {
+      const oldHass = changedProps.get('hass');
+      if (oldHass && this.config.top_sensors) {
+        const graphSensors = this.config.top_sensors.filter(s => s.display_type === 'graph');
+        for (const sensor of graphSensors) {
+          const oldState = oldHass.states[sensor.entity];
+          const newState = this.hass.states[sensor.entity];
+          if (oldState && newState && oldState.state !== newState.state) {
+            this._fetchGraphData();
+            break;
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  private async _fetchGraphData(): Promise<void> {
+    if (!this.config.top_sensors || !this.hass) return;
+    
+    const graphSensors = this.config.top_sensors.filter(s => s.display_type === 'graph');
+    if (graphSensors.length === 0) return;
+
+    const endTime = new Date();
+    const startTime = new Date(endTime.getTime() - 60 * 60 * 1000); // 1 hour ago
+
+    const newGraphData: Record<string, HistoryData[]> = {};
+
+    for (const sensor of graphSensors) {
+      try {
+        const history = await this.hass.callApi<HistoryData[][]>(
+          'GET',
+          `history/period/${startTime.toISOString()}?filter_entity_id=${sensor.entity}&end_time=${endTime.toISOString()}`
+        );
+        if (history && history[0]) {
+          newGraphData[sensor.entity] = history[0];
+        }
+      } catch (e) {
+        console.error('Failed to fetch history for', sensor.entity, e);
+      }
+    }
+
+    this.graphData = { ...this.graphData, ...newGraphData };
+  }
+
+  private _getGraphHeight(entityId: string, currentValue: number, max: number = 100): number {
+    const history = this.graphData[entityId];
+    if (!history || history.length === 0) {
+      return (currentValue / max) * 100;
+    }
+
+    const latestPoint = history[history.length - 1];
+    const value = parseFloat(latestPoint.state);
+    if (isNaN(value)) {
+      return (currentValue / max) * 100;
+    }
+
+    return Math.min(100, Math.max(0, (value / max) * 100));
   }
 
   private _getSensorState(entityId: string): SensorData | null {
@@ -309,12 +372,11 @@ export class RouterCard extends LitElement implements LovelaceCard {
     const rightData = statusSection?.right_entity ? this._getSensorState(statusSection.right_entity) : null;
     const showLeft = leftData !== null;
     const showRight = rightData !== null;
-    const showRebootLabel = rebootConfig?.enabled && rebootConfig.label && rebootConfig.label.trim() !== '';
+    const showRebootLabel = rebootConfig?.enabled;
     const showUpdate = updateSection?.enabled && updateSection.entity && this._checkUpdateAvailable(updateSection.entity);
 
     return html`
       <ha-card class="router-card ${this.config.theme || 'default'}">
-        <!-- Заголовок -->
         <div class="header">
           <div class="header-left">
             <ha-icon icon="${icon}"></ha-icon>
@@ -326,14 +388,12 @@ export class RouterCard extends LitElement implements LovelaceCard {
           <div class="header-right">
             ${rebootConfig?.enabled 
               ? html`<span class="badge reboot-badge" @click=${this._handleReboot}>
-                  <ha-icon icon="${rebootConfig.icon || 'mdi:restart'}"></ha-icon>
-                  ${showRebootLabel ? html`<span>${rebootConfig.label}</span>` : nothing}
+                  Reboot
                 </span>` 
               : nothing}
           </div>
         </div>
 
-        <!-- Update Section -->
         ${showUpdate
           ? html`<div class="update-section ${updateSection?.tap_action && updateSection.tap_action.action !== 'none' ? 'clickable' : ''}" 
                 @click=${() => this._handleTap(updateSection?.tap_action, updateSection?.entity)}>
@@ -342,7 +402,6 @@ export class RouterCard extends LitElement implements LovelaceCard {
             </div>` 
           : nothing}
 
-        <!-- Status Section -->
         ${showStatusSection && (showLeft || showRight)
           ? html`<div class="status-section ${statusSection?.tap_action && statusSection.tap_action.action !== 'none' ? 'clickable' : ''}" 
                 @click=${() => this._handleTap(statusSection?.tap_action, statusSection?.left_entity)}>
@@ -366,7 +425,6 @@ export class RouterCard extends LitElement implements LovelaceCard {
           : nothing}
 
         <div class="content">
-          <!-- Верхняя секция (карточки) -->
           ${this.config.top_sensors && this.config.top_sensors.length > 0
             ? html`<div class="top-section">
                 <div class="cards-grid">
@@ -383,7 +441,7 @@ export class RouterCard extends LitElement implements LovelaceCard {
                     );
                     const barColor = formatted.barValue !== undefined ? this._getLoadColor(formatted.barValue) : undefined;
                     const displayType = sensor.display_type || 'number';
-                    const graphHeight = formatted.barValue !== undefined ? formatted.barValue : 50;
+                    const graphHeight = this._getGraphHeight(sensor.entity, parseFloat(data.state) || 0, sensor.max || 100);
                     const showValue = displayType !== 'graph';
                     const isClickable = sensor.tap_action && sensor.tap_action.action !== 'none';
 
@@ -407,32 +465,30 @@ export class RouterCard extends LitElement implements LovelaceCard {
                               <div class="card-bar-fill" style="width: ${formatted.barValue}%; background: ${barColor}"></div>
                             </div>`
                           : nothing}
-                            ${displayType === 'graph'
-                            ? html`<div class="card-graph-wrapper">
-                                <div class="card-graph-header">
-                                    <span class="card-graph-value">${formatted.display}</span>
-                                </div>
-                                <div class="card-graph">
-                                    <svg class="graph-svg" viewBox="0 0 100 50" preserveAspectRatio="none">
-                                    <defs>
-                                        <linearGradient id="graphGradient-${sensor.entity}" x1="0%" y1="0%" x2="0%" y2="100%">
-                                        <stop offset="0%" style="stop-color:var(--accent-color);stop-opacity:0.3" />
-                                        <stop offset="100%" style="stop-color:var(--accent-color);stop-opacity:0" />
-                                        </linearGradient>
-                                    </defs>
-                                    <path class="graph-area" 
-                                            d="M 0 50 L 0 ${50 - graphHeight * 0.4} Q 25 ${50 - graphHeight * 0.5} 50 ${50 - graphHeight * 0.45} Q 75 ${50 - graphHeight * 0.4} 100 ${50 - graphHeight * 0.5} L 100 50 Z" 
-                                            fill="url(#graphGradient-${sensor.entity})" />
-                                    <path class="graph-line" 
-                                            d="M 0 ${50 - graphHeight * 0.4} Q 25 ${50 - graphHeight * 0.5} 50 ${50 - graphHeight * 0.45} Q 75 ${50 - graphHeight * 0.4} 100 ${50 - graphHeight * 0.5}" 
-                                            fill="none" 
-                                            stroke="var(--accent-color)" 
-                                            stroke-width="1.5" 
-                                            stroke-linecap="round" />
-                                    </svg>
-                                </div>
-                                </div>`
-                            : nothing}
+                        ${displayType === 'graph'
+                          ? html`<div class="card-graph-wrapper">
+                              <div class="card-graph-value">${formatted.display}</div>
+                              <div class="card-graph">
+                                <svg class="graph-svg" viewBox="0 0 100 50" preserveAspectRatio="none">
+                                  <defs>
+                                    <linearGradient id="graphGradient-${sensor.entity}" x1="0%" y1="0%" x2="0%" y2="100%">
+                                      <stop offset="0%" style="stop-color:var(--accent-color);stop-opacity:0.3" />
+                                      <stop offset="100%" style="stop-color:var(--accent-color);stop-opacity:0" />
+                                    </linearGradient>
+                                  </defs>
+                                  <path class="graph-area" 
+                                        d="M 0 50 L 0 ${50 - graphHeight * 0.4} Q 25 ${50 - graphHeight * 0.5} 50 ${50 - graphHeight * 0.45} Q 75 ${50 - graphHeight * 0.4} 100 ${50 - graphHeight * 0.5} L 100 50 Z" 
+                                        fill="url(#graphGradient-${sensor.entity})" />
+                                  <path class="graph-line" 
+                                        d="M 0 ${50 - graphHeight * 0.4} Q 25 ${50 - graphHeight * 0.5} 50 ${50 - graphHeight * 0.45} Q 75 ${50 - graphHeight * 0.4} 100 ${50 - graphHeight * 0.5}" 
+                                        fill="none" 
+                                        stroke="var(--accent-color)" 
+                                        stroke-width="2" 
+                                        stroke-linecap="round" />
+                                </svg>
+                              </div>
+                            </div>`
+                          : nothing}
                       </div>
                     `;
                   })}
@@ -440,7 +496,6 @@ export class RouterCard extends LitElement implements LovelaceCard {
               </div>`
             : nothing}
 
-          <!-- Нижняя секция (список в 2 колонки) -->
           ${this.config.bottom_sensors && this.config.bottom_sensors.length > 0
             ? html`<div class="bottom-section">
                 <div class="list-grid">
@@ -493,7 +548,6 @@ export class RouterCard extends LitElement implements LovelaceCard {
         color: #333333;
       }
 
-      /* Header */
       .header {
         display: flex;
         justify-content: space-between;
@@ -553,16 +607,11 @@ export class RouterCard extends LitElement implements LovelaceCard {
         transform: scale(1.05);
       }
 
-      .badge.reboot-badge ha-icon {
-        font-size: 12px;
-      }
-
       .header-right {
         display: flex;
         align-items: center;
       }
 
-      /* Update Section */
       .update-section {
         display: flex;
         align-items: center;
@@ -596,7 +645,6 @@ export class RouterCard extends LitElement implements LovelaceCard {
         font-size: 18px;
       }
 
-      /* Status Section */
       .status-section {
         margin-bottom: 16px;
         padding: 12px;
@@ -658,14 +706,12 @@ export class RouterCard extends LitElement implements LovelaceCard {
         font-weight: 600;
       }
 
-      /* Content */
       .content {
         display: flex;
         flex-direction: column;
         gap: 16px;
       }
 
-      /* Top Section (Cards) */
       .top-section {
         display: flex;
         flex-direction: column;
@@ -687,6 +733,11 @@ export class RouterCard extends LitElement implements LovelaceCard {
         gap: 8px;
       }
 
+      .card-item.display-type-graph {
+        padding: 0;
+        overflow: hidden;
+      }
+
       .card-item.clickable {
         cursor: pointer;
         transition: all 0.2s;
@@ -705,6 +756,10 @@ export class RouterCard extends LitElement implements LovelaceCard {
         display: flex;
         align-items: center;
         gap: 6px;
+      }
+
+      .card-item.display-type-graph .card-header {
+        padding: 8px 12px 0 12px;
       }
 
       .card-header ha-icon {
@@ -757,42 +812,37 @@ export class RouterCard extends LitElement implements LovelaceCard {
         transition: width 0.3s ease;
       }
 
-      /* Graph Display Type - Compact SVG */
-        .card-graph-wrapper {
-            margin-top: 0;
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            gap: 0;
-        }
-
-        .card-graph-header {
-            display: flex;
-            justify-content: flex-start;
-            align-items: center;
-            padding: 0;
-            margin: 0;
-            min-height: 20px;
-        }
-
-      .card-graph-container {
-        margin-top: 4px;
+      .card-graph-wrapper {
         width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
       }
 
-        .card-graph-value {
+      .card-graph-value {
         font-size: 18px;
         font-weight: 500;
         color: var(--primary-text-color, #333);
         text-align: left;
         line-height: 1;
-        }
+        padding: 0 12px 6px 12px;
+      }
+
+      .dark .card-graph-value {
+        color: #ffffff;
+      }
 
       .card-graph {
-        height: 35px;
+        height: 40px;
         width: 100%;
         padding: 0;
         margin: 0;
+        display: block;
+        line-height: 0;
+      }
+
+      .card-item.display-type-graph {
+        padding-bottom: 8px;
       }
 
       .graph-svg {
@@ -810,7 +860,6 @@ export class RouterCard extends LitElement implements LovelaceCard {
         filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
       }
 
-      /* Bottom Section (List - 2 columns) */
       .bottom-section {
         display: flex;
         flex-direction: column;
