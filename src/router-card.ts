@@ -1,89 +1,29 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { HomeAssistant, LovelaceCard, LovelaceCardEditor } from 'custom-card-helpers';
+import { loadHaComponents } from '@kipk/load-ha-components';
 import './router-card-editor';
+import './cards/number-card';
+import './cards/bar-card';
+import './cards/graph-card';
+import './cards/badge-card';
+import './sections/status-section';
+import './sections/update-section';
+import './sections/list-section';
+import { RouterCardConfig, SensorData, HistoryData } from './types/config';
 
-interface SensorConfig {
-  entity: string;
-  name: string;
-  unit?: string;
-  icon?: string;
-  display_type?: 'bar' | 'number' | 'graph' | 'badge';
-  min?: number;
-  max?: number;
-  tap_action?: {
-    action: 'more-info' | 'toggle' | 'call-service' | 'navigate' | 'url' | 'none';
-    navigation_path?: string;
-    url_path?: string;
-    service?: string;
-    service_data?: Record<string, any>;
-  };
-}
-
-interface StatusSectionConfig {
-  enabled: boolean;
-  left_entity?: string;
-  left_label?: string;
-  right_entity?: string;
-  right_label?: string;
-  tap_action?: {
-    action: 'more-info' | 'toggle' | 'call-service' | 'navigate' | 'url' | 'none';
-    navigation_path?: string;
-    url_path?: string;
-    service?: string;
-    service_data?: Record<string, any>;
-  };
-}
-
-interface UpdateSectionConfig {
-  enabled: boolean;
-  entity?: string;
-  label?: string;
-  tap_action?: {
-    action: 'more-info' | 'toggle' | 'call-service' | 'navigate' | 'url' | 'none';
-    navigation_path?: string;
-    url_path?: string;
-    service?: string;
-    service_data?: Record<string, any>;
-  };
-}
-
-interface RebootButtonConfig {
-  enabled: boolean;
-  service?: string;
-  service_data?: Record<string, any>;
-  confirmation?: boolean;
-}
-
-interface RouterCardConfig {
-  type: string;
-  name?: string;
-  icon?: string;
-  controller?: boolean;
-  theme?: 'default' | 'dark' | 'light';
-  update_section?: UpdateSectionConfig;
-  status_section?: StatusSectionConfig;
-  reboot_button?: RebootButtonConfig;
-  top_sensors?: SensorConfig[];
-  bottom_sensors?: SensorConfig[];
-}
-
-interface SensorData {
-  state: string;
-  attributes?: Record<string, any>;
-  unit?: string;
-}
-
-interface HistoryData {
-  state: string;
-  last_changed: string;
-}
+const ICONS = {
+  ROUTER: 'mdi:router-wireless',
+  ACCESS_POINT: 'mdi:access-point',
+  RESTART: 'mdi:restart'
+};
 
 @customElement('router-card')
 export class RouterCard extends LitElement implements LovelaceCard {
   @property() public hass!: HomeAssistant;
   @state() private config!: RouterCardConfig;
   @state() private graphData: Record<string, HistoryData[]> = {};
+  @state() private componentsLoaded = false;
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
     return document.createElement('router-card-editor');
@@ -98,15 +38,15 @@ export class RouterCard extends LitElement implements LovelaceCard {
       theme: 'default',
       update_section: {
         enabled: true,
-        entity: 'update.router_firmware',
+        entity: '',
         label: 'Update Available',
         tap_action: { action: 'more-info' },
       },
       status_section: {
         enabled: true,
-        left_entity: 'sensor.router_wan_status',
+        left_entity: '',
         left_label: 'WAN Status',
-        right_entity: 'sensor.router_wan_ip',
+        right_entity: '',
         right_label: 'WAN IP',
         tap_action: { action: 'more-info' },
       },
@@ -114,27 +54,28 @@ export class RouterCard extends LitElement implements LovelaceCard {
         enabled: false,
         service: 'button.router_reboot_press',
         confirmation: true,
+        label: 'Reboot',
+        icon: 'mdi:restart',
       },
-      top_sensors: [
-        { entity: 'sensor.router_cpu_load', name: 'CPU Load', unit: '%', display_type: 'bar', tap_action: { action: 'more-info' } },
-        { entity: 'sensor.router_memory_usage', name: 'Memory', unit: '%', display_type: 'graph', tap_action: { action: 'more-info' } },
-        { entity: 'sensor.router_uptime', name: 'Uptime', display_type: 'number', tap_action: { action: 'more-info' } },
-        { entity: 'sensor.router_connected_clients', name: 'Clients', icon: 'mdi:devices', display_type: 'badge', tap_action: { action: 'more-info' } },
-      ],
-      bottom_sensors: [
-        { entity: 'sensor.router_wifi_2g_temperature', name: 'WiFi 2.4GHz', unit: '°C', display_type: 'number', tap_action: { action: 'more-info' } },
-        { entity: 'sensor.router_wifi_5g_temperature', name: 'WiFi 5GHz', unit: '°C', display_type: 'number', tap_action: { action: 'more-info' } },
-        { entity: 'sensor.router_wan_rx', name: 'WAN RX', unit: 'GB', display_type: 'number', tap_action: { action: 'more-info' } },
-        { entity: 'sensor.router_wan_tx', name: 'WAN TX', unit: 'GB', display_type: 'number', tap_action: { action: 'more-info' } },
-      ],
+      top_sensors: [],
+      bottom_sensors: [],
     };
   }
 
   public setConfig(config: RouterCardConfig): void {
-    this.config = {
-      ...config,
-    };
+    this.config = { ...config };
     this._fetchGraphData();
+    this._loadComponents();
+  }
+
+  private async _loadComponents() {
+    try {
+      await loadHaComponents();
+      this.componentsLoaded = true;
+      this.requestUpdate();
+    } catch (e) {
+      console.warn('Failed to load HA components:', e);
+    }
   }
 
   protected shouldUpdate(changedProps: any): boolean {
@@ -157,16 +98,14 @@ export class RouterCard extends LitElement implements LovelaceCard {
 
   private async _fetchGraphData(): Promise<void> {
     if (!this.config.top_sensors || !this.hass) return;
-    
     const graphSensors = this.config.top_sensors.filter(s => s.display_type === 'graph');
     if (graphSensors.length === 0) return;
 
-    const endTime = new Date();
-    const startTime = new Date(endTime.getTime() - 60 * 60 * 1000); // 1 hour ago
-
     const newGraphData: Record<string, HistoryData[]> = {};
-
     for (const sensor of graphSensors) {
+      const hours = sensor.hours_to_show || 24;
+      const endTime = new Date();
+      const startTime = new Date(endTime.getTime() - hours * 60 * 60 * 1000);
       try {
         const history = await this.hass.callApi<HistoryData[][]>(
           'GET',
@@ -179,30 +118,15 @@ export class RouterCard extends LitElement implements LovelaceCard {
         console.error('Failed to fetch history for', sensor.entity, e);
       }
     }
-
     this.graphData = { ...this.graphData, ...newGraphData };
-  }
-
-  private _getGraphHeight(entityId: string, currentValue: number, max: number = 100): number {
-    const history = this.graphData[entityId];
-    if (!history || history.length === 0) {
-      return (currentValue / max) * 100;
-    }
-
-    const latestPoint = history[history.length - 1];
-    const value = parseFloat(latestPoint.state);
-    if (isNaN(value)) {
-      return (currentValue / max) * 100;
-    }
-
-    return Math.min(100, Math.max(0, (value / max) * 100));
+    this.requestUpdate();
   }
 
   private _getSensorState(entityId: string): SensorData | null {
-    if (!entityId || !this.hass.states[entityId]) {
-      return null;
-    }
+    if (!entityId || !this.hass || !this.hass.states) return null;
     const state = this.hass.states[entityId];
+    if (!state) return null;
+    
     return {
       state: state.state,
       attributes: state.attributes,
@@ -211,124 +135,40 @@ export class RouterCard extends LitElement implements LovelaceCard {
   }
 
   private _checkUpdateAvailable(entityId: string): boolean {
-    if (!entityId || !this.hass.states[entityId]) {
-      return false;
-    }
+    if (!entityId || !this.hass.states[entityId]) return false;
     const state = this.hass.states[entityId];
-    const entityIdParts = entityId.split('.');
-    const domain = entityIdParts[0];
-
-    if (domain === 'update') {
-      return state.state === 'on' || state.state === 'available';
-    }
-    if (domain === 'binary_sensor') {
-      return state.state === 'on';
-    }
+    const domain = entityId.split('.')[0];
+    if (domain === 'update') return state.state === 'on' || state.state === 'available';
+    if (domain === 'binary_sensor') return state.state === 'on';
     return state.state === 'on' || state.state === 'true' || state.state === '1';
-  }
-
-  private _formatValue(value: string, unit?: string, displayType?: string, min?: number, max?: number): { display: string, barValue?: number } {
-    const numValue = parseFloat(value);
-    let displayValue = value;
-    let barValue: number | undefined;
-
-    if (!isNaN(numValue)) {
-      if (unit === 'GB' || unit === 'TB') {
-        displayValue = `${numValue.toFixed(2)} ${unit}`;
-      } else if (unit === '%' || unit === '°C') {
-        displayValue = `${numValue.toFixed(1)}${unit}`;
-        if (displayType === 'bar' && unit === '%') {
-          barValue = Math.min(100, Math.max(0, numValue));
-        }
-      } else if (numValue > 86400 && !unit) {
-        const days = Math.floor(numValue / 86400);
-        const hours = Math.floor((numValue % 86400) / 3600);
-        const minutes = Math.floor((numValue % 3600) / 60);
-        const parts: string[] = [];
-        if (days > 0) parts.push(`${days}д`);
-        if (hours > 0) parts.push(`${hours}ч`);
-        if (minutes > 0 || parts.length === 0) parts.push(`${minutes}м`);
-        displayValue = parts.join(' ');
-      } else {
-        displayValue = `${numValue}${unit || ''}`;
-      }
-
-      if (displayType === 'bar' && min !== undefined && max !== undefined) {
-        barValue = ((numValue - min) / (max - min)) * 100;
-        barValue = Math.min(100, Math.max(0, barValue));
-      }
-    } else {
-      displayValue = `${value}${unit || ''}`;
-    }
-
-    return { display: displayValue, barValue };
-  }
-
-  private _getStatusColor(status: string): string {
-    const lowerStatus = status.toLowerCase();
-    if (lowerStatus.includes('connected') || lowerStatus.includes('up') || lowerStatus === 'on' || lowerStatus === 'true' || lowerStatus === 'online') {
-      return '#27ae60';
-    }
-    if (lowerStatus.includes('disconnected') || lowerStatus.includes('down') || lowerStatus === 'off' || lowerStatus === 'false' || lowerStatus === 'offline') {
-      return '#e74c3c';
-    }
-    return '#f39c12';
-  }
-
-  private _getLoadColor(percentage: number): string {
-    if (percentage < 50) return '#27ae60';
-    if (percentage < 80) return '#f39c12';
-    return '#e74c3c';
-  }
-
-  private _shouldShowStatusSection(): boolean {
-    const statusSection = this.config.status_section;
-    if (!statusSection || !statusSection.enabled) {
-      return false;
-    }
-    return true;
   }
 
   private _handleReboot(): void {
     const rebootConfig = this.config.reboot_button;
-    if (!rebootConfig || !rebootConfig.enabled) {
-      return;
-    }
-
+    if (!rebootConfig || !rebootConfig.enabled) return;
     const confirmation = rebootConfig.confirmation !== false;
+    if (confirmation && !confirm('Are you sure you want to reboot the router?')) return;
     
-    if (confirmation) {
-      const confirmed = confirm('Are you sure you want to reboot the router?');
-      if (!confirmed) {
-        return;
-      }
-    }
-
     const service = rebootConfig.service || 'button.router_reboot_press';
     const [domain, serviceName] = service.split('.');
-    
     this.hass.callService(domain, serviceName, rebootConfig.service_data || {});
   }
 
-  private _handleTap(action: { action: string; navigation_path?: string; url_path?: string; service?: string; service_data?: Record<string, any> } | undefined, entityId?: string): void {
+  private _handleTap(action?: any, entityId?: string): void {
     if (!action || action.action === 'none') {
       if (entityId) {
         this.dispatchEvent(new CustomEvent('hass-more-info', {
-          bubbles: true,
-          composed: true,
-          detail: { entityId },
+          bubbles: true, composed: true, detail: { entityId },
         }));
       }
       return;
     }
-
+    
     switch (action.action) {
       case 'more-info':
         if (entityId) {
           this.dispatchEvent(new CustomEvent('hass-more-info', {
-            bubbles: true,
-            composed: true,
-            detail: { entityId },
+            bubbles: true, composed: true, detail: { entityId },
           }));
         }
         break;
@@ -339,9 +179,7 @@ export class RouterCard extends LitElement implements LovelaceCard {
         }
         break;
       case 'url':
-        if (action.url_path) {
-          window.open(action.url_path, '_blank');
-        }
+        if (action.url_path) window.open(action.url_path, '_blank');
         break;
       case 'call-service':
         if (action.service) {
@@ -350,30 +188,44 @@ export class RouterCard extends LitElement implements LovelaceCard {
         }
         break;
       case 'toggle':
-        if (entityId) {
-          this.hass.callService('homeassistant', 'toggle', { entity_id: entityId });
-        }
+        if (entityId) this.hass.callService('homeassistant', 'toggle', { entity_id: entityId });
         break;
+    }
+  }
+
+  private _renderSensorCard(sensor: any, data: SensorData) {
+    const props = {
+      sensor,
+      data,
+      hass: this.hass,
+      graphData: this.graphData,
+      onClick: this._handleTap.bind(this)
+    };
+
+    switch (sensor.display_type) {
+      case 'bar':
+        return html`<router-bar-card .sensor=${sensor} .data=${data} .onClick=${this._handleTap.bind(this)}></router-bar-card>`;
+      case 'graph':
+        return html`<router-graph-card .sensor=${sensor} .data=${data} .graphData=${this.graphData} .onClick=${this._handleTap.bind(this)}></router-graph-card>`;
+      case 'badge':
+        return html`<router-badge-card .sensor=${sensor} .data=${data} .onClick=${this._handleTap.bind(this)}></router-badge-card>`;
+      case 'number':
+      default:
+        return html`<router-number-card .sensor=${sensor} .data=${data} .onClick=${this._handleTap.bind(this)}></router-number-card>`;
     }
   }
 
   protected render() {
     if (!this.config || !this.hass) {
-      return html``;
+      return html`<ha-card><div class="loading">Loading...</div></ha-card>`;
     }
-
-    const icon = this.config.icon || (this.config.controller ? 'mdi:router-wireless' : 'mdi:access-point');
-    const showStatusSection = this._shouldShowStatusSection();
-    const statusSection = this.config.status_section;
-    const rebootConfig = this.config.reboot_button;
-    const updateSection = this.config.update_section;
-
-    const leftData = statusSection?.left_entity ? this._getSensorState(statusSection.left_entity) : null;
-    const rightData = statusSection?.right_entity ? this._getSensorState(statusSection.right_entity) : null;
-    const showLeft = leftData !== null;
-    const showRight = rightData !== null;
-    const showRebootLabel = rebootConfig?.enabled;
-    const showUpdate = updateSection?.enabled && updateSection.entity && this._checkUpdateAvailable(updateSection.entity);
+    
+    const icon = this.config.icon || (this.config.controller ? ICONS.ROUTER : ICONS.ACCESS_POINT);
+    const leftData = this.config.status_section?.left_entity ? this._getSensorState(this.config.status_section.left_entity) : null;
+    const rightData = this.config.status_section?.right_entity ? this._getSensorState(this.config.status_section.right_entity) : null;
+    const showUpdate = this.config.update_section?.enabled && 
+                      this.config.update_section.entity && 
+                      this._checkUpdateAvailable(this.config.update_section.entity);
 
     return html`
       <ha-card class="router-card ${this.config.theme || 'default'}">
@@ -386,166 +238,87 @@ export class RouterCard extends LitElement implements LovelaceCard {
               : html`<span class="badge repeater">Repeater</span>`}
           </div>
           <div class="header-right">
-            ${rebootConfig?.enabled 
+            ${this.config.reboot_button?.enabled 
               ? html`<span class="badge reboot-badge" @click=${this._handleReboot}>
-                  Reboot
+                  <ha-icon icon="${this.config.reboot_button.icon || ICONS.RESTART}"></ha-icon>
+                  ${this.config.reboot_button.label || 'Reboot'}
                 </span>` 
               : nothing}
           </div>
         </div>
 
-        ${showUpdate
-          ? html`<div class="update-section ${updateSection?.tap_action && updateSection.tap_action.action !== 'none' ? 'clickable' : ''}" 
-                @click=${() => this._handleTap(updateSection?.tap_action, updateSection?.entity)}>
-              <ha-icon icon="mdi:arrow-up-circle"></ha-icon>
-              <span>${updateSection?.label || 'Update Available'}</span>
-            </div>` 
-          : nothing}
+        <!-- Update Section -->
+        <router-update-section
+          .enabled=${this.config.update_section?.enabled || false}
+          .config=${this.config.update_section || {}}
+          .updateAvailable=${showUpdate}
+          .tap_action=${this.config.update_section?.tap_action}
+          .onClick=${this._handleTap.bind(this)}
+        ></router-update-section>
 
-        ${showStatusSection && (showLeft || showRight)
-          ? html`<div class="status-section ${statusSection?.tap_action && statusSection.tap_action.action !== 'none' ? 'clickable' : ''}" 
-                @click=${() => this._handleTap(statusSection?.tap_action, statusSection?.left_entity)}>
-              <div class="status-row">
-                ${showLeft 
-                  ? html`<div class="status-item ${showRight ? 'status-left' : ''}">
-                      <span class="status-label">${statusSection?.left_label || 'Status'}</span>
-                      <span class="status-value" style="color: ${this._getStatusColor(leftData!.state)}">
-                        ● ${leftData!.state}
-                      </span>
-                    </div>` 
-                  : nothing}
-                ${showRight 
-                  ? html`<div class="status-item ${showLeft ? 'status-right' : ''}">
-                      <span class="status-label">${statusSection?.right_label || 'IP'}</span>
-                      <span class="status-value">${rightData!.state}</span>
-                    </div>` 
-                  : nothing}
-              </div>
-            </div>` 
-          : nothing}
+        <!-- Status Section -->
+        <router-status-section
+          .enabled=${this.config.status_section?.enabled || false}
+          .config=${this.config.status_section || {}}
+          .leftData=${leftData}
+          .rightData=${rightData}
+          .tap_action=${this.config.status_section?.tap_action}
+          .onClick=${this._handleTap.bind(this)}
+        ></router-status-section>
 
-        <div class="content">
-          ${this.config.top_sensors && this.config.top_sensors.length > 0
-            ? html`<div class="top-section">
-                <div class="cards-grid">
-                  ${this.config.top_sensors.map((sensor) => {
-                    const data = this._getSensorState(sensor.entity);
-                    if (!data) return nothing;
-                    
-                    const formatted = this._formatValue(
-                      data.state, 
-                      sensor.unit || data.unit, 
-                      sensor.display_type,
-                      sensor.min,
-                      sensor.max
-                    );
-                    const barColor = formatted.barValue !== undefined ? this._getLoadColor(formatted.barValue) : undefined;
-                    const displayType = sensor.display_type || 'number';
-                    const graphHeight = this._getGraphHeight(sensor.entity, parseFloat(data.state) || 0, sensor.max || 100);
-                    const showValue = displayType !== 'graph';
-                    const isClickable = sensor.tap_action && sensor.tap_action.action !== 'none';
-
-                    return html`
-                      <div class="card-item display-type-${displayType} ${isClickable ? 'clickable' : ''}" 
-                           @click=${() => this._handleTap(sensor.tap_action, sensor.entity)}>
-                        <div class="card-header">
-                          ${sensor.icon ? html`<ha-icon icon="${sensor.icon}"></ha-icon>` : nothing}
-                          <span class="card-name">${sensor.name}</span>
-                        </div>
-                        ${showValue
-                          ? html`<div class="card-value" 
-                                style="${barColor && displayType === 'bar' ? `color: ${barColor}` : ''}">
-                              ${displayType === 'badge' 
-                                ? html`<span class="badge-value">${formatted.display}</span>`
-                                : formatted.display}
-                            </div>`
-                          : nothing}
-                        ${displayType === 'bar' && formatted.barValue !== undefined
-                          ? html`<div class="card-bar">
-                              <div class="card-bar-fill" style="width: ${formatted.barValue}%; background: ${barColor}"></div>
-                            </div>`
-                          : nothing}
-                        ${displayType === 'graph'
-                          ? html`<div class="card-graph-wrapper">
-                              <div class="card-graph-value">${formatted.display}</div>
-                              <div class="card-graph">
-                                <svg class="graph-svg" viewBox="0 0 100 50" preserveAspectRatio="none">
-                                  <defs>
-                                    <linearGradient id="graphGradient-${sensor.entity}" x1="0%" y1="0%" x2="0%" y2="100%">
-                                      <stop offset="0%" style="stop-color:var(--accent-color);stop-opacity:0.3" />
-                                      <stop offset="100%" style="stop-color:var(--accent-color);stop-opacity:0" />
-                                    </linearGradient>
-                                  </defs>
-                                  <path class="graph-area" 
-                                        d="M 0 50 L 0 ${50 - graphHeight * 0.4} Q 25 ${50 - graphHeight * 0.5} 50 ${50 - graphHeight * 0.45} Q 75 ${50 - graphHeight * 0.4} 100 ${50 - graphHeight * 0.5} L 100 50 Z" 
-                                        fill="url(#graphGradient-${sensor.entity})" />
-                                  <path class="graph-line" 
-                                        d="M 0 ${50 - graphHeight * 0.4} Q 25 ${50 - graphHeight * 0.5} 50 ${50 - graphHeight * 0.45} Q 75 ${50 - graphHeight * 0.4} 100 ${50 - graphHeight * 0.5}" 
-                                        fill="none" 
-                                        stroke="var(--accent-color)" 
-                                        stroke-width="2" 
-                                        stroke-linecap="round" />
-                                </svg>
-                              </div>
-                            </div>`
-                          : nothing}
+        <!-- Top Sensors (Cards) -->
+        ${this.config.top_sensors && this.config.top_sensors.length > 0 ? html`
+          <div class="top-section">
+            <div class="cards-grid">
+              ${this.config.top_sensors.map((sensor) => {
+                const data = this._getSensorState(sensor.entity);
+                if (!data) {
+                  return html`
+                    <div class="card-item error">
+                      <div class="card-header">
+                        <ha-icon icon="mdi:alert"></ha-icon>
+                        <span class="card-name">${sensor.name}</span>
                       </div>
-                    `;
-                  })}
-                </div>
-              </div>`
-            : nothing}
+                      <div class="card-value error">Entity not found</div>
+                    </div>
+                  `;
+                }
+                return this._renderSensorCard(sensor, data);
+              })}
+            </div>
+          </div>
+        ` : nothing}
 
-          ${this.config.bottom_sensors && this.config.bottom_sensors.length > 0
-            ? html`<div class="bottom-section">
-                <div class="list-grid">
-                  ${this.config.bottom_sensors.map((sensor) => {
-                    const data = this._getSensorState(sensor.entity);
-                    if (!data) return nothing;
-                    
-                    const formatted = this._formatValue(data.state, sensor.unit || data.unit, sensor.display_type);
-                    const isClickable = sensor.tap_action && sensor.tap_action.action !== 'none';
-
-                    return html`
-                      <div class="list-item ${isClickable ? 'clickable' : ''}" 
-                           @click=${() => this._handleTap(sensor.tap_action, sensor.entity)}>
-                        <div class="list-left">
-                          ${sensor.icon ? html`<ha-icon icon="${sensor.icon}"></ha-icon>` : nothing}
-                          <span class="list-name">${sensor.name}</span>
-                        </div>
-                        <span class="list-value">${formatted.display}</span>
-                      </div>
-                    `;
-                  })}
-                </div>
-              </div>`
-            : nothing}
+        <!-- Bottom Sensors (List) - всегда с отступом сверху -->
+        <div class="list-section-wrapper">
+          <router-list-section
+            .enabled=${(this.config.bottom_sensors?.length || 0) > 0}
+            .sensors=${this.config.bottom_sensors || []}
+            .hass=${this.hass}
+            .onClick=${this._handleTap.bind(this)}
+          ></router-list-section>
         </div>
-      </ha-card>
     `;
   }
 
   static get styles() {
     return css`
-      :host {
-        display: block;
-      }
-
+      :host { display: block; }
+      
       ha-card {
         padding: 16px;
         background: var(--card-background-color, #ffffff);
         border-radius: 12px;
         box-shadow: var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,0.1));
       }
-
-      .router-card.dark {
-        background: #1a1a2e;
-        color: #ffffff;
-      }
-
-      .router-card.light {
-        background: #ffffff;
-        color: #333333;
+      
+      .router-card.dark { background: #1a1a2e; color: #ffffff; }
+      .router-card.light { background: #ffffff; color: #333333; }
+      
+      .loading {
+        padding: 20px;
+        text-align: center;
+        color: var(--secondary-text-color);
       }
 
       .header {
@@ -556,23 +329,23 @@ export class RouterCard extends LitElement implements LovelaceCard {
         padding-bottom: 12px;
         border-bottom: 1px solid var(--divider-color, #e0e0e0);
       }
-
+      
       .header-left {
         display: flex;
         align-items: center;
         gap: 12px;
       }
-
-      .header-left ha-icon {
-        font-size: 28px;
-        color: var(--primary-color, #03a9f4);
+      
+      .header-left ha-icon { 
+        --mdc-icon-size: 28px; 
+        color: var(--primary-color, #03a9f4); 
       }
-
+      
       .title {
         font-size: 18px;
         font-weight: 600;
       }
-
+      
       .badge {
         padding: 4px 8px;
         border-radius: 12px;
@@ -582,364 +355,126 @@ export class RouterCard extends LitElement implements LovelaceCard {
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        white-space: nowrap;
       }
-
+      
       .badge.controller {
         background: #27ae60;
         color: white;
       }
-
+      
       .badge.repeater {
         background: #3498db;
         color: white;
       }
-
-      .badge.reboot-badge {
+      
+      .badge.reboot-badge { 
         background: #e74c3c;
         color: white;
         cursor: pointer;
         transition: all 0.2s;
+        padding: 4px 10px;
       }
-
+      
       .badge.reboot-badge:hover {
         background: #c0392b;
         transform: scale(1.05);
       }
-
-      .header-right {
-        display: flex;
-        align-items: center;
+      
+      .badge.reboot-badge ha-icon { 
+        --mdc-icon-size: 14px; 
+        color: white; 
       }
-
-      .update-section {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 10px 16px;
-        margin-bottom: 16px;
-        background: rgba(243, 156, 28, 0.2);
-        border: 1px solid rgba(243, 156, 28, 0.5);
-        border-radius: 8px;
-        color: #f39c12;
-        font-size: 13px;
-        font-weight: 600;
-      }
-
-      .update-section.clickable {
-        cursor: pointer;
-        transition: all 0.2s;
-      }
-
-      .update-section.clickable:hover {
-        background: rgba(243, 156, 28, 0.3);
-        transform: scale(1.02);
-      }
-
-      .dark .update-section {
-        background: rgba(243, 156, 28, 0.15);
-      }
-
-      .update-section ha-icon {
-        font-size: 18px;
-      }
-
-      .status-section {
-        margin-bottom: 16px;
-        padding: 12px;
-        background: var(--secondary-background-color, #f5f5f5);
-        border-radius: 8px;
-      }
-
-      .status-section.clickable {
-        cursor: pointer;
-        transition: all 0.2s;
-      }
-
-      .status-section.clickable:hover {
-        background: var(--primary-color, #03a9f4);
-      }
-
-      .status-section.clickable:hover .status-label,
-      .status-section.clickable:hover .status-value {
-        color: white;
-      }
-
-      .dark .status-section {
-        background: #16213e;
-      }
-
-      .status-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 16px;
-      }
-
-      .status-item {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-
-      .status-item.status-left {
-        flex: 1;
-      }
-
-      .status-item.status-right {
-        text-align: right;
-      }
-
-      .status-label {
-        font-size: 11px;
-        color: var(--secondary-text-color, #666);
-        text-transform: uppercase;
-      }
-
-      .dark .status-label {
-        color: #aaa;
-      }
-
-      .status-value {
-        font-size: 16px;
-        font-weight: 600;
-      }
-
-      .content {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-
+      
       .top-section {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
+        margin-top: 16px;
       }
-
+      
       .cards-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
         gap: 12px;
       }
-
-      .card-item {
+      
+      .card-item.error {
         background: var(--secondary-background-color, #f5f5f5);
+        border: 1px solid #e74c3c;
+        opacity: 0.7;
         padding: 14px;
         border-radius: 10px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
       }
-
-      .card-item.display-type-graph {
-        padding: 0;
-        overflow: hidden;
-      }
-
-      .card-item.clickable {
-        cursor: pointer;
-        transition: all 0.2s;
-      }
-
-      .card-item.clickable:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-      }
-
-      .dark .card-item {
+      
+      .dark .card-item.error {
         background: #16213e;
       }
-
-      .card-header {
+      
+      .card-item .card-header {
         display: flex;
         align-items: center;
         gap: 6px;
+        padding: 0 0 8px 0;
       }
-
-      .card-item.display-type-graph .card-header {
-        padding: 8px 12px 0 12px;
+      
+      .card-item .card-header ha-icon { 
+        --mdc-icon-size: 16px; 
+        color: var(--secondary-text-color, #666); 
       }
-
-      .card-header ha-icon {
-        font-size: 16px;
-        color: var(--secondary-text-color, #666);
-      }
-
-      .dark .card-header ha-icon {
+      
+      .dark .card-item .card-header ha-icon {
         color: #aaa;
       }
-
-      .card-name {
+      
+      .card-item .card-name { 
         font-size: 12px;
         color: var(--secondary-text-color, #666);
         font-weight: 500;
       }
-
-      .dark .card-name {
+      
+      .dark .card-item .card-name {
         color: #aaa;
       }
-
-      .card-value {
-        font-size: 22px;
-        font-weight: 600;
+      
+      .card-item .card-value.error {
+        color: #e74c3c;
+        font-size: 12px;
+      }
+      
+      .list-section-wrapper {
+        margin-top: 16px;
       }
 
-      .badge-value {
-        background: var(--primary-color, #03a9f4);
-        color: white;
-        padding: 4px 12px;
-        border-radius: 16px;
-        font-size: 18px;
-      }
-
-      .card-bar {
-        height: 4px;
-        background: #e0e0e0;
-        border-radius: 2px;
-        overflow: hidden;
-        margin-top: 4px;
-      }
-
-      .dark .card-bar {
-        background: #2a2a4a;
-      }
-
-      .card-bar-fill {
-        height: 100%;
-        border-radius: 2px;
-        transition: width 0.3s ease;
-      }
-
-      .card-graph-wrapper {
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        gap: 0;
-      }
-
-      .card-graph-value {
-        font-size: 18px;
-        font-weight: 500;
-        color: var(--primary-text-color, #333);
-        text-align: left;
-        line-height: 1;
-        padding: 0 12px 6px 12px;
-      }
-
-      .dark .card-graph-value {
-        color: #ffffff;
-      }
-
-      .card-graph {
-        height: 40px;
-        width: 100%;
-        padding: 0;
-        margin: 0;
-        display: block;
-        line-height: 0;
-      }
-
-      .card-item.display-type-graph {
-        padding-bottom: 8px;
-      }
-
-      .graph-svg {
-        width: 100%;
-        height: 100%;
-        display: block;
-      }
-
-      .graph-area {
-        transition: all 0.3s ease;
-      }
-
-      .graph-line {
-        transition: all 0.3s ease;
-        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
-      }
-
-      .bottom-section {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .list-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 8px;
-      }
-
+      /* Адаптивность для мобильных */
       @media (max-width: 600px) {
-        .list-grid {
+        ha-card {
+          padding: 12px;
+        }
+        
+        .cards-grid {
           grid-template-columns: 1fr;
         }
-      }
-
-      .list-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 10px 14px;
-        background: var(--secondary-background-color, #f5f5f5);
-        border-radius: 8px;
-      }
-
-      .list-item.clickable {
-        cursor: pointer;
-        transition: all 0.2s;
-      }
-
-      .list-item.clickable:hover {
-        background: var(--primary-color, #03a9f4);
-      }
-
-      .list-item.clickable:hover .list-name,
-      .list-item.clickable:hover .list-value {
-        color: white;
-      }
-
-      .dark .list-item {
-        background: #16213e;
-      }
-
-      .list-left {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .list-left ha-icon {
-        font-size: 16px;
-        color: var(--secondary-text-color, #666);
-      }
-
-      .dark .list-left ha-icon {
-        color: #aaa;
-      }
-
-      .list-name {
-        font-size: 13px;
-        color: var(--primary-text-color, #333);
-        font-weight: 500;
-      }
-
-      .dark .list-name {
-        color: #fff;
-      }
-
-      .list-value {
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--primary-color, #03a9f4);
+        
+        .badge.reboot-badge {
+          padding: 4px 8px;
+          font-size: 10px;
+        }
       }
     `;
   }
 
   public getCardSize(): number {
-    return 4;
+    let size = 2;
+    
+    if (this.config.top_sensors) {
+      size += Math.ceil(this.config.top_sensors.length / 2);
+    }
+    
+    if (this.config.bottom_sensors) {
+      size += Math.ceil(this.config.bottom_sensors.length / 4);
+    }
+    
+    if (this.config.update_section?.enabled) size += 1;
+    if (this.config.status_section?.enabled) size += 1;
+    
+    return size;
   }
 }
 

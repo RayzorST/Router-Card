@@ -1,103 +1,80 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { LovelaceCardEditor } from 'custom-card-helpers';
+import { fireEvent } from 'custom-card-helpers';
+import { RouterCardConfig, SensorConfig, TapActionConfig, UpdateSectionConfig, StatusSectionConfig, RebootButtonConfig } from './types/config';
 
-interface TapActionConfig {
-  action: 'more-info' | 'toggle' | 'call-service' | 'navigate' | 'url' | 'none';
-  navigation_path?: string;
-  url_path?: string;
-  service?: string;
-  service_data?: Record<string, any>;
-}
+const ICONS = {
+  COG: 'mdi:cog',
+  WAN: 'mdi:wan',
+  VIEW_GRID: 'mdi:view-grid',
+  FORMAT_LIST_BULLETED: 'mdi:format-list-bulleted',
+  PLUS: 'mdi:plus',
+  DELETE: 'mdi:delete',
+  INFORMATION: 'mdi:information',
+  RESTART: 'mdi:restart'
+};
 
-interface SensorConfig {
-  entity: string;
-  name: string;
-  unit?: string;
-  icon?: string;
-  display_type?: 'bar' | 'number' | 'graph' | 'badge';
-  min?: number;
-  max?: number;
-  tap_action?: TapActionConfig;
-}
-
-interface StatusSectionConfig {
-  enabled: boolean;
-  left_entity?: string;
-  left_label?: string;
-  right_entity?: string;
-  right_label?: string;
-  tap_action?: TapActionConfig;
-}
-
-interface UpdateSectionConfig {
-  enabled: boolean;
-  entity?: string;
-  label?: string;
-  tap_action?: TapActionConfig;
-}
-
-interface RebootButtonConfig {
-  enabled: boolean;
-  service?: string;
-  service_data?: Record<string, any>;
-  confirmation?: boolean;
-  label?: string;
-  icon?: string;
-}
-
-interface RouterCardEditorConfig {
-  type: string;
-  name?: string;
-  icon?: string;
-  controller?: boolean;
-  theme?: string;
-  update_section?: UpdateSectionConfig;
-  status_section?: StatusSectionConfig;
-  reboot_button?: RebootButtonConfig;
-  top_sensors?: SensorConfig[];
-  bottom_sensors?: SensorConfig[];
-  [key: string]: any;
-}
-
-const VALID_CONFIG_KEYS = [
-  'type', 'name', 'icon', 'controller', 'theme',
-  'update_section', 'status_section', 'reboot_button', 'top_sensors', 'bottom_sensors',
-];
+// Определяем допустимые ключи конфигурации
+type ConfigKey = keyof RouterCardConfig;
+type NestedConfigKey = 'update_section' | 'status_section' | 'reboot_button';
+type SensorSectionKey = 'top_sensors' | 'bottom_sensors';
 
 @customElement('router-card-editor')
 export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
   @property() public hass!: any;
-  @state() private _config!: RouterCardEditorConfig;
+  @state() private _config!: RouterCardConfig;
   @state() private _activeTab: 'general' | 'status' | 'top' | 'bottom' = 'general';
+  @state() private _expandedSensors: Set<string> = new Set();
 
-  public setConfig(config: RouterCardEditorConfig): void {
+  public setConfig(config: RouterCardConfig): void {
     this._config = {
-      ...config,
-      update_section: config.update_section || {
+      type: config.type,
+      name: config.name || 'Router',
+      icon: config.icon || 'mdi:router-wireless',
+      controller: config.controller !== false,
+      theme: config.theme || 'default',
+      update_section: {
         enabled: true,
         entity: '',
         label: 'Update Available',
         tap_action: { action: 'more-info' },
+        ...config.update_section,
       },
-      status_section: config.status_section || {
+      status_section: {
         enabled: true,
         left_entity: '',
         left_label: 'Status',
         right_entity: '',
         right_label: 'IP',
         tap_action: { action: 'more-info' },
+        ...config.status_section,
       },
-      reboot_button: config.reboot_button || {
+      reboot_button: {
         enabled: false,
         service: 'button.router_reboot_press',
         confirmation: true,
-        label: '',
+        label: 'Reboot',
         icon: 'mdi:restart',
+        ...config.reboot_button,
       },
       top_sensors: config.top_sensors || [],
       bottom_sensors: config.bottom_sensors || [],
     };
+  }
+
+  private _toggleSensor(section: string, index: number): void {
+    const key = `${section}-${index}`;
+    if (this._expandedSensors.has(key)) {
+      this._expandedSensors.delete(key);
+    } else {
+      this._expandedSensors.add(key);
+    }
+    this.requestUpdate();
+  }
+
+  private _isSensorExpanded(section: string, index: number): boolean {
+    return this._expandedSensors.has(`${section}-${index}`);
   }
 
   protected render() {
@@ -105,414 +82,457 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
       return html``;
     }
 
-    const updateSection = this._config.update_section || {
-      enabled: true,
-      entity: '',
-      label: 'Update Available',
-      tap_action: { action: 'more-info' },
-    };
-
-    const statusSection = this._config.status_section || {
-      enabled: true,
-      left_entity: '',
-      left_label: 'Status',
-      right_entity: '',
-      right_label: 'IP',
-      tap_action: { action: 'more-info' },
-    };
-
-    const rebootConfig = this._config.reboot_button || {
-      enabled: false,
-      service: 'button.router_reboot_press',
-      confirmation: true,
-      label: '',
-      icon: 'mdi:restart',
-    };
-
     return html`
       <div class="editor">
         <!-- Tabs -->
         <div class="tabs">
-          <button class="tab ${this._activeTab === 'general' ? 'active' : ''}" @click=${() => this._setActiveTab('general')}>
-            <ha-icon icon="mdi:cog"></ha-icon> General
+          <button 
+            class="tab ${this._activeTab === 'general' ? 'active' : ''}" 
+            @click=${() => this._setActiveTab('general')}
+            title="General Settings"
+          >
+            <ha-icon icon="${ICONS.COG}"></ha-icon>
+            <span>General</span>
           </button>
-          <button class="tab ${this._activeTab === 'status' ? 'active' : ''}" @click=${() => this._setActiveTab('status')}>
-            <ha-icon icon="mdi:wan"></ha-icon> Status
+          <button 
+            class="tab ${this._activeTab === 'status' ? 'active' : ''}" 
+            @click=${() => this._setActiveTab('status')}
+            title="Status Section"
+          >
+            <ha-icon icon="${ICONS.WAN}"></ha-icon>
+            <span>Status</span>
           </button>
-          <button class="tab ${this._activeTab === 'top' ? 'active' : ''}" @click=${() => this._setActiveTab('top')}>
-            <ha-icon icon="mdi:view-grid"></ha-icon> Top (Cards)
+          <button 
+            class="tab ${this._activeTab === 'top' ? 'active' : ''}" 
+            @click=${() => this._setActiveTab('top')}
+            title="Top Sensors - Card View"
+          >
+            <ha-icon icon="${ICONS.VIEW_GRID}"></ha-icon>
+            <span>Top Cards</span>
           </button>
-          <button class="tab ${this._activeTab === 'bottom' ? 'active' : ''}" @click=${() => this._setActiveTab('bottom')}>
-            <ha-icon icon="mdi:format-list-bulleted"></ha-icon> Bottom (List)
+          <button 
+            class="tab ${this._activeTab === 'bottom' ? 'active' : ''}" 
+            @click=${() => this._setActiveTab('bottom')}
+            title="Bottom Sensors - List View"
+          >
+            <ha-icon icon="${ICONS.FORMAT_LIST_BULLETED}"></ha-icon>
+            <span>Bottom List</span>
           </button>
         </div>
 
-        <!-- General Tab -->
-        ${this._activeTab === 'general' ? html`
-          <div class="tab-content">
-            <div class="editor-row">
-              <div class="editor-item">
-                <ha-textfield
-                  .value=${this._config.name || ''}
-                  .configValue=${'name'}
-                  @input=${this._valueChanged}
-                  label="Card Name"
-                ></ha-textfield>
-              </div>
-              <div class="editor-item">
-                <ha-icon-picker
-                  .value=${this._config.icon || 'mdi:router-wireless'}
-                  .configValue=${'icon'}
-                  @value-changed=${this._valueChanged}
-                  label="Custom Icon"
-                ></ha-icon-picker>
-              </div>
+        <!-- Tab Content -->
+        ${this._renderTabContent()}
+      </div>
+    `;
+  }
+
+  private _renderTabContent() {
+    switch (this._activeTab) {
+      case 'general':
+        return this._renderGeneralTab();
+      case 'status':
+        return this._renderStatusTab();
+      case 'top':
+        return this._renderSensorsTab('top_sensors', 'Card View - Top Section', true);
+      case 'bottom':
+        return this._renderSensorsTab('bottom_sensors', 'List View - Bottom Section', false);
+      default:
+        return nothing;
+    }
+  }
+
+  private _renderGeneralTab() {
+    const updateSection = this._config.update_section!;
+    const rebootConfig = this._config.reboot_button!;
+
+    return html`
+      <div class="tab-content">
+        <!-- Basic Settings -->
+        <div class="section">
+          <h3 class="section-title">Basic Settings</h3>
+          <div class="grid-2">
+            <ha-textfield
+              .value=${this._config.name || ''}
+              @input=${(e: any) => this._handleBasicChange('name', e.target.value)}
+              label="Card Name"
+              placeholder="Router"
+            ></ha-textfield>
+
+            <ha-icon-picker
+              .value=${this._config.icon || 'mdi:router-wireless'}
+              @value-changed=${(e: any) => this._handleBasicChange('icon', e.detail.value)}
+              label="Card Icon"
+            ></ha-icon-picker>
+          </div>
+
+          <div class="grid-2">
+            <ha-formfield label="Controller Mode">
+              <ha-switch
+                .checked=${this._config.controller !== false}
+                @change=${(e: any) => this._handleBasicChange('controller', e.target.checked)}
+              ></ha-switch>
+            </ha-formfield>
+
+            <ha-select
+              .value=${this._config.theme || 'default'}
+              @selected=${(e: any) => this._handleBasicChange('theme', e.target.value)}
+              label="Theme"
+              fixedMenuPosition
+              naturalMenuWidth
+            >
+              <ha-list-item value="default">Default</ha-list-item>
+              <ha-list-item value="dark">Dark</ha-list-item>
+              <ha-list-item value="light">Light</ha-list-item>
+            </ha-select>
+          </div>
+        </div>
+
+        <!-- Update Section -->
+        <div class="section">
+          <div class="section-header">
+            <h3 class="section-title">Update Section</h3>
+            <ha-formfield label="Enable">
+              <ha-switch
+                .checked=${updateSection.enabled !== false}
+                @change=${(e: any) => this._handleNestedChange('update_section', 'enabled', e.target.checked)}
+              ></ha-switch>
+            </ha-formfield>
+          </div>
+
+          ${updateSection.enabled ? html`
+            <div class="grid-2">
+              <ha-entity-picker
+                .hass=${this.hass}
+                .value=${updateSection.entity || ''}
+                @value-changed=${(e: any) => this._handleNestedChange('update_section', 'entity', e.detail.value)}
+                label="Update Entity"
+                allow-custom-entity
+                include-domains='["update", "binary_sensor"]'
+              ></ha-entity-picker>
+
+              <ha-textfield
+                .value=${updateSection.label || 'Update Available'}
+                @input=${(e: any) => this._handleNestedChange('update_section', 'label', e.target.value)}
+                label="Label"
+                placeholder="Update Available"
+              ></ha-textfield>
             </div>
-            <div class="editor-row">
-              <ha-formfield label="Controller Mode">
-                <ha-switch
-                  .checked=${this._config.controller !== false}
-                  .configValue=${'controller'}
-                  @change=${this._valueChanged}
-                ></ha-switch>
-              </ha-formfield>
-              <div class="editor-item" style="max-width: 200px;">
-                <ha-select
-                  .value=${this._config.theme || 'default'}
-                  .configValue=${'theme'}
-                  @selected=${this._valueChanged}
-                  @closed=${(ev: any) => ev.stopPropagation()}
-                  label="Theme"
-                >
-                  <mwc-list-item value="default">Default</mwc-list-item>
-                  <mwc-list-item value="dark">Dark</mwc-list-item>
-                  <mwc-list-item value="light">Light</mwc-list-item>
-                </ha-select>
-              </div>
-            </div>
-            
-            <!-- Update Section in General Tab -->
-            <div class="section-divider">
-              <span class="section-title">Update Section</span>
-            </div>
-            <div class="editor-row">
-              <ha-formfield label="Enable Update Section">
-                <ha-switch
-                  .checked=${updateSection.enabled !== false}
-                  .configValue=${'update_section'}
-                  .fieldValue=${'enabled'}
-                  @change=${this._nestedValueChanged}
-                ></ha-switch>
-              </ha-formfield>
-            </div>
-            <div class="editor-row">
-              <div class="editor-item">
-                <ha-entity-picker
-                  .hass=${this.hass}
-                  .value=${updateSection.entity || ''}
-                  .configValue=${'update_section'}
-                  .fieldValue=${'entity'}
-                  @value-changed=${this._nestedValueChanged}
-                  label="Update Entity"
-                  allow-custom-entity
-                  include-domains='["update", "binary_sensor"]'
-                ></ha-entity-picker>
-              </div>
-              <div class="editor-item">
-                <ha-textfield
-                  .value=${updateSection.label || 'Update Available'}
-                  .configValue=${'update_section'}
-                  .fieldValue=${'label'}
-                  @input=${this._nestedValueChanged}
-                  label="Label"
-                ></ha-textfield>
-              </div>
-            </div>
-            <div class="editor-row">
-              <div class="editor-item">
-                <ha-select
-                  .value=${updateSection.tap_action?.action || 'more-info'}
-                  .configValue=${'update_section'}
-                  .fieldValue=${'tap_action'}
-                  @selected=${this._tapActionChanged}
-                  @closed=${(ev: any) => ev.stopPropagation()}
-                  label="Tap Action"
-                >
-                  <mwc-list-item value="more-info">More Info</mwc-list-item>
-                  <mwc-list-item value="navigate">Navigate</mwc-list-item>
-                  <mwc-list-item value="url">URL</mwc-list-item>
-                  <mwc-list-item value="call-service">Call Service</mwc-list-item>
-                  <mwc-list-item value="none">None</mwc-list-item>
-                </ha-select>
-              </div>
-            </div>
-            
-            <!-- Reboot Button Section in General Tab -->
-            <div class="section-divider">
-            <span class="section-title">Reboot Button</span>
-            </div>
-            <div class="editor-row">
-            <ha-formfield label="Enable Reboot Button">
-                <ha-switch
+
+            <hui-action-editor
+              .hass=${this.hass}
+              .value=${updateSection.tap_action || { action: 'more-info' }}
+              @value-changed=${(e: any) => this._handleNestedChange('update_section', 'tap_action', e.detail.value)}
+              label="Tap Action"
+            ></hui-action-editor>
+          ` : nothing}
+        </div>
+
+        <!-- Reboot Button -->
+        <div class="section">
+          <div class="section-header">
+            <h3 class="section-title">Reboot Button</h3>
+            <ha-formfield label="Enable">
+              <ha-switch
                 .checked=${rebootConfig.enabled !== false}
-                .configValue=${'reboot_button'}
-                .fieldValue=${'enabled'}
-                @change=${this._nestedValueChanged}
-                ></ha-switch>
+                @change=${(e: any) => this._handleNestedChange('reboot_button', 'enabled', e.target.checked)}
+              ></ha-switch>
             </ha-formfield>
-            </div>
-            <div class="editor-row">
-            <div class="editor-item">
-                <ha-textfield
-                .value=${rebootConfig.service || 'button.router_reboot_press'}
-                .configValue=${'reboot_button'}
-                .fieldValue=${'service'}
-                @input=${this._nestedValueChanged}
-                label="Service"
-                ></ha-textfield>
-            </div>
-            <ha-formfield label="Show Confirmation">
-                <ha-switch
-                .checked=${rebootConfig.confirmation !== false}
-                .configValue=${'reboot_button'}
-                .fieldValue=${'confirmation'}
-                @change=${this._nestedValueChanged}
-                ></ha-switch>
-            </ha-formfield>
-            </div>
-        ` : nothing}
+          </div>
 
-        <!-- Status Tab -->
-        ${this._activeTab === 'status' ? html`
-          <div class="tab-content">
-            <div class="editor-row">
-              <ha-formfield label="Enable Status Section">
+          ${rebootConfig.enabled ? html`
+            <div class="grid-2">
+              <ha-textfield
+                .value=${rebootConfig.service || 'button.router_reboot_press'}
+                @input=${(e: any) => this._handleNestedChange('reboot_button', 'service', e.target.value)}
+                label="Service"
+                placeholder="button.router_reboot_press"
+              ></ha-textfield>
+
+              <ha-textfield
+                .value=${rebootConfig.label || 'Reboot'}
+                @input=${(e: any) => this._handleNestedChange('reboot_button', 'label', e.target.value)}
+                label="Button Label"
+                placeholder="Reboot"
+              ></ha-textfield>
+            </div>
+
+            <div class="grid-2">
+              <ha-icon-picker
+                .value=${rebootConfig.icon || 'mdi:restart'}
+                @value-changed=${(e: any) => this._handleNestedChange('reboot_button', 'icon', e.detail.value)}
+                label="Button Icon"
+              ></ha-icon-picker>
+
+              <ha-formfield label="Show Confirmation">
                 <ha-switch
-                  .checked=${statusSection.enabled !== false}
-                  .configValue=${'status_section'}
-                  .fieldValue=${'enabled'}
-                  @change=${this._nestedValueChanged}
+                  .checked=${rebootConfig.confirmation !== false}
+                  @change=${(e: any) => this._handleNestedChange('reboot_button', 'confirmation', e.target.checked)}
                 ></ha-switch>
               </ha-formfield>
             </div>
-            <div class="editor-row">
-              <div class="editor-item">
-                <ha-entity-picker
-                  .hass=${this.hass}
-                  .value=${statusSection.left_entity || ''}
-                  .configValue=${'status_section'}
-                  .fieldValue=${'left_entity'}
-                  @value-changed=${this._nestedValueChanged}
-                  label="Left Entity"
-                  allow-custom-entity
-                ></ha-entity-picker>
-              </div>
-              <div class="editor-item">
-                <ha-textfield
-                  .value=${statusSection.left_label || 'Status'}
-                  .configValue=${'status_section'}
-                  .fieldValue=${'left_label'}
-                  @input=${this._nestedValueChanged}
-                  label="Left Label"
-                ></ha-textfield>
-              </div>
+          ` : nothing}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderStatusTab() {
+    const statusSection = this._config.status_section!;
+
+    return html`
+      <div class="tab-content">
+        <div class="section">
+          <div class="section-header">
+            <h3 class="section-title">Status Section</h3>
+            <ha-formfield label="Enable">
+              <ha-switch
+                .checked=${statusSection.enabled !== false}
+                @change=${(e: any) => this._handleNestedChange('status_section', 'enabled', e.target.checked)}
+              ></ha-switch>
+            </ha-formfield>
+          </div>
+
+          ${statusSection.enabled ? html`
+            <div class="info-box">
+              <ha-icon icon="${ICONS.INFORMATION}"></ha-icon>
+              <span>Left entity shows connection status, right entity shows WAN IP.</span>
             </div>
-            <div class="editor-row">
-              <div class="editor-item">
-                <ha-entity-picker
-                  .hass=${this.hass}
-                  .value=${statusSection.right_entity || ''}
-                  .configValue=${'status_section'}
-                  .fieldValue=${'right_entity'}
-                  @value-changed=${this._nestedValueChanged}
-                  label="Right Entity"
-                  allow-custom-entity
-                ></ha-entity-picker>
-              </div>
-              <div class="editor-item">
-                <ha-textfield
-                  .value=${statusSection.right_label || 'IP'}
-                  .configValue=${'status_section'}
-                  .fieldValue=${'right_label'}
-                  @input=${this._nestedValueChanged}
-                  label="Right Label"
-                ></ha-textfield>
-              </div>
+
+            <h4>Left Column</h4>
+            <div class="grid-2">
+              <ha-entity-picker
+                .hass=${this.hass}
+                .value=${statusSection.left_entity || ''}
+                @value-changed=${(e: any) => this._handleNestedChange('status_section', 'left_entity', e.detail.value)}
+                label="Left Entity"
+                allow-custom-entity
+              ></ha-entity-picker>
+
+              <ha-textfield
+                .value=${statusSection.left_label || 'Status'}
+                @input=${(e: any) => this._handleNestedChange('status_section', 'left_label', e.target.value)}
+                label="Left Label"
+                placeholder="Status"
+              ></ha-textfield>
             </div>
-            <div class="editor-row">
-              <div class="editor-item">
+
+            <h4>Right Column</h4>
+            <div class="grid-2">
+              <ha-entity-picker
+                .hass=${this.hass}
+                .value=${statusSection.right_entity || ''}
+                @value-changed=${(e: any) => this._handleNestedChange('status_section', 'right_entity', e.detail.value)}
+                label="Right Entity"
+                allow-custom-entity
+              ></ha-entity-picker>
+
+              <ha-textfield
+                .value=${statusSection.right_label || 'IP'}
+                @input=${(e: any) => this._handleNestedChange('status_section', 'right_label', e.target.value)}
+                label="Right Label"
+                placeholder="IP"
+              ></ha-textfield>
+            </div>
+
+            <hui-action-editor
+              .hass=${this.hass}
+              .value=${statusSection.tap_action || { action: 'more-info' }}
+              @value-changed=${(e: any) => this._handleNestedChange('status_section', 'tap_action', e.detail.value)}
+              label="Section Tap Action"
+            ></hui-action-editor>
+          ` : nothing}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderSensorsTab(section: 'top_sensors' | 'bottom_sensors', title: string, isTop: boolean) {
+    const sensors = this._config[section] || [];
+
+    return html`
+      <div class="tab-content">
+        <div class="section">
+          <div class="sensors-header">
+            <h3 class="section-title">${title}</h3>
+            <ha-button @click=${() => this._addSensor(section)}>
+              <ha-icon icon="${ICONS.PLUS}" slot="icon"></ha-icon>
+              Add Sensor
+            </ha-button>
+          </div>
+
+          ${isTop ? html`
+            <div class="info-box">
+              <ha-icon icon="${ICONS.INFORMATION}"></ha-icon>
+              <span>For graph type: detail level (1=low, 2=medium, 3=high), hours to show (1-168).</span>
+            </div>
+          ` : html`
+            <div class="info-box">
+              <ha-icon icon="${ICONS.INFORMATION}"></ha-icon>
+              <span>List items show in 2 columns. You can set icon, name, unit and tap action.</span>
+            </div>
+          `}
+
+          ${sensors.length === 0 ? html`
+            <div class="empty-state">
+              No sensors configured. Click "Add Sensor" to start.
+            </div>
+          ` : html`
+            <div class="sensors-list">
+              ${sensors.map((sensor: SensorConfig, index: number) => this._renderSensorRow(section, sensor, index, isTop))}
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderSensorRow(section: 'top_sensors' | 'bottom_sensors', sensor: SensorConfig, index: number, isTop: boolean) {
+    const isExpanded = this._isSensorExpanded(section, index);
+    const hasIcon = !!sensor.icon;
+    const hasUnit = !!sensor.unit;
+    const hasTapAction = sensor.tap_action && sensor.tap_action.action !== 'more-info';
+
+    return html`
+      <div class="sensor-row">
+        <div class="sensor-header" @click=${() => this._toggleSensor(section, index)}>
+          <div class="sensor-title">
+            <ha-icon icon="${isExpanded ? 'mdi:chevron-down' : 'mdi:chevron-right'}"></ha-icon>
+            <span class="sensor-name">${sensor.name || 'Unnamed Sensor'}</span>
+            ${hasIcon ? html`<ha-icon icon="${sensor.icon}" class="sensor-icon-preview"></ha-icon>` : ''}
+            ${hasUnit ? html`<span class="sensor-unit-preview">(${sensor.unit})</span>` : ''}
+            ${hasTapAction ? html`<span class="sensor-badge">tap</span>` : ''}
+          </div>
+          <ha-icon-button
+            .label=${'Remove sensor'}
+            @click=${(e: Event) => { e.stopPropagation(); this._removeSensor(section, index); }}
+          >
+            <ha-icon icon="${ICONS.DELETE}"></ha-icon>
+          </ha-icon-button>
+        </div>
+
+        ${isExpanded ? html`
+          <div class="sensor-content">
+            <!-- Entity -->
+            <div class="grid-2">
+              <ha-entity-picker
+                .hass=${this.hass}
+                .value=${sensor.entity || ''}
+                @value-changed=${(e: any) => this._handleSensorChange(section, index, 'entity', e.detail.value)}
+                label="Entity"
+                allow-custom-entity
+                required
+              ></ha-entity-picker>
+
+              <ha-textfield
+                .value=${sensor.name || ''}
+                @input=${(e: any) => this._handleSensorChange(section, index, 'name', e.target.value)}
+                label="Display Name"
+                placeholder="Sensor Name"
+                required
+              ></ha-textfield>
+            </div>
+
+            <!-- Icon and Unit -->
+            <div class="grid-2">
+              <ha-icon-picker
+                .value=${sensor.icon || ''}
+                @value-changed=${(e: any) => this._handleSensorChange(section, index, 'icon', e.detail.value)}
+                label="Icon (optional)"
+              ></ha-icon-picker>
+
+              <ha-textfield
+                .value=${sensor.unit || ''}
+                @input=${(e: any) => this._handleSensorChange(section, index, 'unit', e.target.value)}
+                label="Unit"
+                placeholder="% or °C or GB"
+              ></ha-textfield>
+            </div>
+
+            <!-- Display Type (only for top sensors) -->
+            ${isTop ? html`
+              <div class="grid-2">
                 <ha-select
-                  .value=${statusSection.tap_action?.action || 'more-info'}
-                  .configValue=${'status_section'}
-                  .fieldValue=${'tap_action'}
-                  @selected=${this._tapActionChanged}
-                  @closed=${(ev: any) => ev.stopPropagation()}
-                  label="Tap Action"
+                  .value=${sensor.display_type || 'number'}
+                  @selected=${(e: any) => this._handleSensorChange(section, index, 'display_type', e.target.value)}
+                  label="Display Type"
+                  fixedMenuPosition
+                  naturalMenuWidth
                 >
-                  <mwc-list-item value="more-info">More Info</mwc-list-item>
-                  <mwc-list-item value="navigate">Navigate</mwc-list-item>
-                  <mwc-list-item value="url">URL</mwc-list-item>
-                  <mwc-list-item value="call-service">Call Service</mwc-list-item>
-                  <mwc-list-item value="none">None</mwc-list-item>
+                  <ha-list-item value="number">Number</ha-list-item>
+                  <ha-list-item value="bar">Progress Bar</ha-list-item>
+                  <ha-list-item value="graph">Graph</ha-list-item>
+                  <ha-list-item value="badge">Badge</ha-list-item>
                 </ha-select>
-              </div>
-            </div>
-          </div>
-        ` : nothing}
 
-        <!-- Top Sensors Tab -->
-        ${this._activeTab === 'top' ? html`
-          <div class="tab-content">
-            <div class="sensors-header">
-              <span>Top Section (Card View)</span>
-              <ha-button @click=${() => this._addSensor('top_sensors')}>
-                <ha-icon icon="mdi:plus"></ha-icon> Add Sensor
-              </ha-button>
-            </div>
-            ${this._config.top_sensors?.map((sensor: SensorConfig, index: number) => html`
-              <div class="sensor-row">
-                <div class="sensor-item">
-                  <ha-entity-picker
-                    .hass=${this.hass}
-                    .value=${sensor.entity || ''}
-                    .configValue=${'top_sensors'}
-                    .sensorIndex=${index}
-                    .sensorField=${'entity'}
-                    @value-changed=${this._sensorValueChanged}
-                    label="Entity"
-                    allow-custom-entity
-                  ></ha-entity-picker>
-                </div>
-                <div class="sensor-item">
-                  <ha-textfield
-                    .value=${sensor.name || ''}
-                    .configValue=${'top_sensors'}
-                    .sensorIndex=${index}
-                    .sensorField=${'name'}
-                    @input=${this._sensorValueChanged}
-                    label="Name"
-                  ></ha-textfield>
-                </div>
-                <div class="sensor-item">
-                  <ha-textfield
-                    .value=${sensor.unit || ''}
-                    .configValue=${'top_sensors'}
-                    .sensorIndex=${index}
-                    .sensorField=${'unit'}
-                    @input=${this._sensorValueChanged}
-                    label="Unit"
-                  ></ha-textfield>
-                </div>
-                <div class="sensor-item">
-                    <ha-select
-                    .value=${sensor.display_type || 'number'}
-                    .configValue=${'top_sensors'}
-                    .sensorIndex=${index}
-                    .sensorField=${'display_type'}
-                    @selected=${this._sensorValueChanged}
-                    @closed=${(ev: any) => ev.stopPropagation()}
-                    label="Display Type"
-                    >
-                    <mwc-list-item value="number">Number</mwc-list-item>
-                    <mwc-list-item value="bar">Progress Bar</mwc-list-item>
-                    <mwc-list-item value="graph">Graph (HA Sensor Style)</mwc-list-item>
-                    <mwc-list-item value="badge">Badge</mwc-list-item>
-                    </ha-select>
-                </div>
-                <div class="sensor-item">
+                ${sensor.display_type === 'graph' ? html`
                   <ha-select
-                    .value=${sensor.tap_action?.action || 'more-info'}
-                    .configValue=${'top_sensors'}
-                    .sensorIndex=${index}
-                    .sensorField=${'tap_action'}
-                    @selected=${this._sensorTapActionChanged}
-                    @closed=${(ev: any) => ev.stopPropagation()}
-                    label="Tap Action"
+                    .value=${sensor.graph_detail || 1}
+                    @selected=${(e: any) => this._handleSensorChange(section, index, 'graph_detail', Number(e.target.value))}
+                    label="Graph Detail"
+                    fixedMenuPosition
+                    naturalMenuWidth
                   >
-                    <mwc-list-item value="more-info">More Info</mwc-list-item>
-                    <mwc-list-item value="navigate">Navigate</mwc-list-item>
-                    <mwc-list-item value="url">URL</mwc-list-item>
-                    <mwc-list-item value="call-service">Call Service</mwc-list-item>
-                    <mwc-list-item value="none">None</mwc-list-item>
+                    <ha-list-item value=${1}>Low (compact)</ha-list-item>
+                    <ha-list-item value=${2}>Medium</ha-list-item>
+                    <ha-list-item value=${3}>High (detailed)</ha-list-item>
                   </ha-select>
-                </div>
-                <ha-icon-button
-                  icon="mdi:delete"
-                  @click=${() => this._removeSensor('top_sensors', index)}
-                ></ha-icon-button>
+                ` : ''}
               </div>
-            `) || html`<div class="empty-state">No sensors configured. Click "Add Sensor" to start.</div>`}
-          </div>
-        ` : nothing}
 
-        <!-- Bottom Sensors Tab -->
-        ${this._activeTab === 'bottom' ? html`
-          <div class="tab-content">
-            <div class="sensors-header">
-              <span>Bottom Section (List View - 2 Columns)</span>
-              <ha-button @click=${() => this._addSensor('bottom_sensors')}>
-                <ha-icon icon="mdi:plus"></ha-icon> Add Sensor
-              </ha-button>
-            </div>
-            ${this._config.bottom_sensors?.map((sensor: SensorConfig, index: number) => html`
-              <div class="sensor-row">
-                <div class="sensor-item">
-                  <ha-entity-picker
-                    .hass=${this.hass}
-                    .value=${sensor.entity || ''}
-                    .configValue=${'bottom_sensors'}
-                    .sensorIndex=${index}
-                    .sensorField=${'entity'}
-                    @value-changed=${this._sensorValueChanged}
-                    label="Entity"
-                    allow-custom-entity
-                  ></ha-entity-picker>
-                </div>
-                <div class="sensor-item">
+              ${sensor.display_type === 'graph' ? html`
+                <ha-textfield
+                  type="number"
+                  .value=${sensor.hours_to_show || 24}
+                  @input=${(e: any) => this._handleSensorChange(section, index, 'hours_to_show', Number(e.target.value))}
+                  label="Hours to Show"
+                  min="1"
+                  max="168"
+                  suffix="hours"
+                ></ha-textfield>
+              ` : ''}
+
+              ${sensor.display_type === 'bar' ? html`
+                <div class="grid-2">
                   <ha-textfield
-                    .value=${sensor.name || ''}
-                    .configValue=${'bottom_sensors'}
-                    .sensorIndex=${index}
-                    .sensorField=${'name'}
-                    @input=${this._sensorValueChanged}
-                    label="Name"
+                    type="number"
+                    .value=${sensor.min ?? 0}
+                    @input=${(e: any) => this._handleSensorChange(section, index, 'min', Number(e.target.value))}
+                    label="Min Value"
+                  ></ha-textfield>
+
+                  <ha-textfield
+                    type="number"
+                    .value=${sensor.max ?? 100}
+                    @input=${(e: any) => this._handleSensorChange(section, index, 'max', Number(e.target.value))}
+                    label="Max Value"
                   ></ha-textfield>
                 </div>
-                <div class="sensor-item">
-                  <ha-textfield
-                    .value=${sensor.unit || ''}
-                    .configValue=${'bottom_sensors'}
-                    .sensorIndex=${index}
-                    .sensorField=${'unit'}
-                    @input=${this._sensorValueChanged}
-                    label="Unit"
-                  ></ha-textfield>
+              ` : ''}
+            ` : ''}
+
+            <!-- Tap Action (для всех сенсоров) -->
+            <hui-action-editor
+              .hass=${this.hass}
+              .value=${sensor.tap_action || { action: 'more-info' }}
+              @value-changed=${(e: any) => this._handleSensorChange(section, index, 'tap_action', e.detail.value)}
+              label="Tap Action"
+            ></hui-action-editor>
+
+            <!-- Preview для list сенсоров -->
+            ${!isTop ? html`
+              <div class="preview-box">
+                <div class="preview-label">Preview:</div>
+                <div class="preview-item">
+                  <div class="list-left">
+                    ${sensor.icon ? html`<ha-icon icon="${sensor.icon}"></ha-icon>` : ''}
+                    <span>${sensor.name || 'Sensor Name'}</span>
+                  </div>
+                  <span class="list-value">${sensor.unit ? `123${sensor.unit}` : '123'}</span>
                 </div>
-                <div class="sensor-item">
-                  <ha-select
-                    .value=${sensor.tap_action?.action || 'more-info'}
-                    .configValue=${'bottom_sensors'}
-                    .sensorIndex=${index}
-                    .sensorField=${'tap_action'}
-                    @selected=${this._sensorTapActionChanged}
-                    @closed=${(ev: any) => ev.stopPropagation()}
-                    label="Tap Action"
-                  >
-                    <mwc-list-item value="more-info">More Info</mwc-list-item>
-                    <mwc-list-item value="navigate">Navigate</mwc-list-item>
-                    <mwc-list-item value="url">URL</mwc-list-item>
-                    <mwc-list-item value="call-service">Call Service</mwc-list-item>
-                    <mwc-list-item value="none">None</mwc-list-item>
-                  </ha-select>
-                </div>
-                <ha-icon-button
-                  icon="mdi:delete"
-                  @click=${() => this._removeSensor('bottom_sensors', index)}
-                ></ha-icon-button>
               </div>
-            `) || html`<div class="empty-state">No sensors configured. Click "Add Sensor" to start.</div>`}
+            ` : ''}
           </div>
-        ` : nothing}
+        ` : ''}
       </div>
     `;
   }
@@ -521,168 +541,111 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
     this._activeTab = tab;
   }
 
-  private _valueChanged(ev: any): void {
-    const target = ev.target as any;
-    const configValue = target.configValue as string;
-    const value = target.checked !== undefined ? target.checked : target.value;
-
-    if (!this._config || !configValue) {
-      return;
-    }
-
-    if (!VALID_CONFIG_KEYS.includes(configValue)) {
-      return;
-    }
+  private _handleBasicChange(key: keyof RouterCardConfig, value: any): void {
+    if (!this._config) return;
 
     const newConfig = { ...this._config };
-
-    if (value === '' || value === undefined) {
-      delete newConfig[configValue];
+    
+    if (value === '' || value === undefined || value === null) {
+      delete newConfig[key];
     } else {
-      newConfig[configValue] = value;
+      (newConfig as any)[key] = value;
     }
 
-    this._config = newConfig;
-    this._dispatchConfigChange(newConfig);
+    this._config = newConfig as RouterCardConfig;
+    fireEvent(this, 'config-changed', { config: newConfig });
   }
 
-  private _nestedValueChanged(ev: any): void {
-    const target = ev.target as any;
-    const configValue = target.configValue as string;
-    const fieldValue = target.fieldValue as string;
-    const value = target.checked !== undefined ? target.checked : target.value;
-
-    if (!this._config || !configValue || !fieldValue) {
-      return;
-    }
+  private _handleNestedChange<T extends NestedConfigKey>(
+    section: T, 
+    field: keyof NonNullable<RouterCardConfig[T]>, 
+    value: any
+  ): void {
+    if (!this._config) return;
 
     const newConfig = { ...this._config };
-    const nestedObject = { ...(newConfig[configValue] || {}) };
+    const nestedObject = { ...(newConfig[section] || {}) } as any;
 
-    if (value === '' || value === undefined) {
-      delete nestedObject[fieldValue];
+    if (value === '' || value === undefined || value === null) {
+      delete nestedObject[field];
     } else {
-      nestedObject[fieldValue] = value;
+      nestedObject[field] = value;
     }
 
-    newConfig[configValue] = nestedObject;
+    newConfig[section] = nestedObject;
     this._config = newConfig;
-    this._dispatchConfigChange(newConfig);
+    fireEvent(this, 'config-changed', { config: newConfig });
   }
 
-  private _tapActionChanged(ev: any): void {
-    const target = ev.target as any;
-    const configValue = target.configValue as string;
-    const fieldValue = target.fieldValue as string;
-    const actionValue = target.value;
-
-    if (!this._config || !configValue || !fieldValue) {
-      return;
-    }
+  private _handleSensorChange(
+    section: 'top_sensors' | 'bottom_sensors', 
+    index: number, 
+    field: keyof SensorConfig, 
+    value: any
+  ): void {
+    if (!this._config) return;
 
     const newConfig = { ...this._config };
-    const nestedObject = { ...(newConfig[configValue] || {}) };
+    const sensorsArray = [...(newConfig[section] || [])];
+    
+    if (!sensorsArray[index]) {
+      sensorsArray[index] = {} as SensorConfig;
+    }
 
-    if (actionValue === 'none') {
-      delete nestedObject[fieldValue];
+    if (value === '' || value === undefined || value === null) {
+      delete (sensorsArray[index] as any)[field];
     } else {
-      nestedObject[fieldValue] = { action: actionValue };
+      (sensorsArray[index] as any)[field] = value;
     }
 
-    newConfig[configValue] = nestedObject;
+    newConfig[section] = sensorsArray;
     this._config = newConfig;
-    this._dispatchConfigChange(newConfig);
-  }
-
-  private _sensorValueChanged(ev: any): void {
-    const target = ev.target as any;
-    const configValue = target.configValue as string;
-    const sensorIndex = target.sensorIndex as number;
-    const sensorField = target.sensorField as string;
-    const value = target.checked !== undefined ? target.checked : target.value;
-
-    if (!this._config || !configValue || sensorIndex === undefined || !sensorField) {
-      return;
-    }
-
-    const newConfig = { ...this._config };
-    const sensorsArray = [...(newConfig[configValue] || [])];
-
-    if (!sensorsArray[sensorIndex]) {
-      sensorsArray[sensorIndex] = {};
-    }
-
-    if (value === '' || value === undefined) {
-      delete sensorsArray[sensorIndex][sensorField];
-    } else {
-      sensorsArray[sensorIndex][sensorField] = value;
-    }
-
-    newConfig[configValue] = sensorsArray;
-    this._config = newConfig;
-    this._dispatchConfigChange(newConfig);
-  }
-
-  private _sensorTapActionChanged(ev: any): void {
-    const target = ev.target as any;
-    const configValue = target.configValue as string;
-    const sensorIndex = target.sensorIndex as number;
-    const sensorField = target.sensorField as string;
-    const actionValue = target.value;
-
-    if (!this._config || !configValue || sensorIndex === undefined || !sensorField) {
-      return;
-    }
-
-    const newConfig = { ...this._config };
-    const sensorsArray = [...(newConfig[configValue] || [])];
-
-    if (!sensorsArray[sensorIndex]) {
-      sensorsArray[sensorIndex] = {};
-    }
-
-    if (actionValue === 'none') {
-      delete sensorsArray[sensorIndex][sensorField];
-    } else {
-      sensorsArray[sensorIndex][sensorField] = { action: actionValue };
-    }
-
-    newConfig[configValue] = sensorsArray;
-    this._config = newConfig;
-    this._dispatchConfigChange(newConfig);
+    fireEvent(this, 'config-changed', { config: newConfig });
   }
 
   private _addSensor(section: 'top_sensors' | 'bottom_sensors'): void {
+    if (!this._config) return;
+
     const newConfig = { ...this._config };
     const sensorsArray = [...(newConfig[section] || [])];
-    sensorsArray.push({ 
-      entity: '', 
-      name: 'New Sensor', 
-      display_type: section === 'top_sensors' ? 'bar' : 'number',
+    
+    const newSensor: SensorConfig = {
+      entity: '',
+      name: 'New Sensor',
+      unit: '',
+      icon: '',
       tap_action: { action: 'more-info' },
-    });
+    };
+
+    if (section === 'top_sensors') {
+      newSensor.display_type = 'number';
+      newSensor.graph_detail = 1;
+      newSensor.hours_to_show = 24;
+    }
+
+    sensorsArray.push(newSensor);
     newConfig[section] = sensorsArray;
     this._config = newConfig;
-    this._dispatchConfigChange(newConfig);
+    
+    // Автоматически раскрываем новый сенсор
+    this._expandedSensors.add(`${section}-${sensorsArray.length - 1}`);
+    
+    fireEvent(this, 'config-changed', { config: newConfig });
   }
 
   private _removeSensor(section: 'top_sensors' | 'bottom_sensors', index: number): void {
+    if (!this._config) return;
+
     const newConfig = { ...this._config };
     const sensorsArray = [...(newConfig[section] || [])];
     sensorsArray.splice(index, 1);
     newConfig[section] = sensorsArray;
     this._config = newConfig;
-    this._dispatchConfigChange(newConfig);
-  }
-
-  private _dispatchConfigChange(newConfig: RouterCardEditorConfig): void {
-    this.dispatchEvent(
-      new CustomEvent('config-changed', {
-        detail: { config: newConfig },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    
+    // Удаляем из expanded
+    this._expandedSensors.delete(`${section}-${index}`);
+    
+    fireEvent(this, 'config-changed', { config: newConfig });
   }
 
   static get styles() {
@@ -691,21 +654,23 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
         display: flex;
         flex-direction: column;
         gap: 16px;
+        padding: 8px 0;
       }
 
       .tabs {
         display: flex;
-        gap: 8px;
+        gap: 4px;
         flex-wrap: wrap;
         border-bottom: 1px solid var(--divider-color, #e0e0e0);
         padding-bottom: 8px;
+        margin-bottom: 8px;
       }
 
       .tab {
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 8px 16px;
+        padding: 8px 12px;
         border: none;
         background: var(--secondary-background-color, #f5f5f5);
         border-radius: 8px;
@@ -714,6 +679,8 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
         font-weight: 500;
         color: var(--primary-text-color, #333);
         transition: all 0.2s;
+        min-width: 80px;
+        justify-content: center;
       }
 
       .tab:hover {
@@ -724,40 +691,53 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
       .tab.active {
         background: var(--primary-color, #03a9f4);
         color: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
       }
 
       .tab ha-icon {
-        font-size: 16px;
+        --mdc-icon-size: 18px;
       }
 
       .tab-content {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 24px;
       }
 
-      .editor-row {
+      .section {
         display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
+        flex-direction: column;
+        gap: 16px;
+        background: var(--card-background-color, #ffffff);
+        border-radius: 12px;
+        padding: 16px;
+      }
+
+      .section-header {
+        display: flex;
+        justify-content: space-between;
         align-items: center;
-      }
-
-      .editor-item {
-        flex: 1;
-        min-width: 150px;
-      }
-
-      .section-divider {
-        margin: 16px 0 8px 0;
-        padding-top: 16px;
-        border-top: 1px solid var(--divider-color, #e0e0e0);
+        margin-bottom: 8px;
       }
 
       .section-title {
-        font-size: 14px;
+        margin: 0;
+        font-size: 16px;
         font-weight: 600;
         color: var(--primary-text-color, #333);
+      }
+
+      h4 {
+        margin: 8px 0 4px 0;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--secondary-text-color, #666);
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
       }
 
       .info-box {
@@ -769,9 +749,11 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
         border-radius: 8px;
         font-size: 13px;
         color: var(--secondary-text-color, #666);
+        border-left: 3px solid var(--primary-color, #03a9f4);
       }
 
       .info-box ha-icon {
+        --mdc-icon-size: 20px;
         color: var(--primary-color, #03a9f4);
       }
 
@@ -779,31 +761,130 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 8px 0;
-        font-weight: 600;
+        margin-bottom: 12px;
+      }
+
+      .sensors-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
 
       .sensor-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: flex-end;
-        padding: 12px;
         background: var(--secondary-background-color, #f5f5f5);
         border-radius: 8px;
-        margin-bottom: 8px;
+        border: 1px solid var(--divider-color, #e0e0e0);
+        overflow: hidden;
       }
 
-      .sensor-item {
+      .sensor-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px;
+        background: var(--secondary-background-color, #f5f5f5);
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .sensor-header:hover {
+        background: var(--primary-color, #03a9f4);
+        color: white;
+      }
+
+      .sensor-header:hover .sensor-name,
+      .sensor-header:hover .sensor-unit-preview,
+      .sensor-header:hover ha-icon {
+        color: white;
+      }
+
+      .sensor-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
         flex: 1;
-        min-width: 120px;
+      }
+
+      .sensor-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--primary-text-color, #333);
+      }
+
+      .sensor-icon-preview {
+        --mdc-icon-size: 16px;
+        color: var(--secondary-text-color);
+      }
+
+      .sensor-unit-preview {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+      }
+
+      .sensor-badge {
+        background: var(--primary-color, #03a9f4);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        text-transform: uppercase;
+      }
+
+      .sensor-content {
+        padding: 16px;
+        border-top: 1px solid var(--divider-color, #e0e0e0);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
       }
 
       .empty-state {
-        padding: 24px;
+        padding: 32px;
         text-align: center;
         color: var(--secondary-text-color, #666);
         font-style: italic;
+        background: var(--secondary-background-color, #f5f5f5);
+        border-radius: 12px;
+        border: 1px dashed var(--divider-color, #e0e0e0);
+      }
+
+      .preview-box {
+        margin-top: 8px;
+        padding: 12px;
+        background: var(--card-background-color, #ffffff);
+        border-radius: 8px;
+        border: 1px solid var(--divider-color, #e0e0e0);
+      }
+
+      .preview-label {
+        font-size: 11px;
+        color: var(--secondary-text-color);
+        margin-bottom: 8px;
+        text-transform: uppercase;
+      }
+
+      .preview-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        background: var(--secondary-background-color, #f5f5f5);
+        border-radius: 6px;
+      }
+
+      .preview-item .list-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .preview-item .list-left ha-icon {
+        --mdc-icon-size: 16px;
+        color: var(--secondary-text-color);
+      }
+
+      .preview-item .list-value {
+        color: var(--primary-text-color);
       }
 
       ha-textfield,
@@ -814,7 +895,28 @@ export class RouterCardEditor extends LitElement implements LovelaceCardEditor {
       }
 
       ha-formfield {
-        white-space: nowrap;
+        padding: 4px 0;
+      }
+
+      @media (max-width: 600px) {
+        .tab {
+          flex: 1;
+          min-width: auto;
+          padding: 8px 4px;
+          font-size: 12px;
+        }
+        
+        .tab span {
+          display: none;
+        }
+        
+        .tab ha-icon {
+          margin: 0;
+        }
+        
+        .grid-2 {
+          grid-template-columns: 1fr;
+        }
       }
     `;
   }
