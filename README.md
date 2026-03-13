@@ -1,18 +1,24 @@
 # Router Card
----
 [![hacs\_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs) [![version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/)
+
 A highly customizable Home Assistant Lovelace card for monitoring routers, access points, and mesh network devices.
 
 [Image: Router Card Preview]
 
 ## 🌟 Features
----
+
 🎯 Universal Compatibility - Works with any router integration that provides sensors
+
 🔄 Controller & Repeater Support - Different badges and icons for main routers and repeaters
+
 📊 Flexible Layout - Two display sections: card view (top) and list view (bottom)
+
 🎨 Customizable - Choose which sensors to display, custom icons, themes
-📡 WAN Status - Dedicated section for WAN connection status and IP
-🌡️ Traffic Monitoring - Display network traffic for WAN, LAN, and WiFi bands
+
+📡 Status - Dedicated section for connection status and IP
+
+⬇️ Updates - Allows you to track the availability of updates for the router
+
 🌙 Theme Support - Default, dark, and light themes
 
 ## 📦 Installation
