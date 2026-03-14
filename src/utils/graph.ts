@@ -1,6 +1,4 @@
-// src/utils/graph.ts
-
-const ONE_HOUR = 3600000; // 1 hour in milliseconds
+const ONE_HOUR = 3600000;
 
 export default class Graph {
   private _history: any[] = [];
@@ -15,6 +13,7 @@ export default class Graph {
   private _logarithmic: boolean;
   private _groupBy: string;
   private _endTime: number = 0;
+  private _startTime: number = 0;
   private _max: number = 0;
   private _min: number = 0;
   
@@ -58,6 +57,7 @@ export default class Graph {
     this._logarithmic = logarithmic;
     this._groupBy = groupBy;
     this._endTime = 0;
+    this._startTime = 0;
   }
 
   get max() { return this._max; }
@@ -73,121 +73,108 @@ export default class Graph {
       this._history = history;
     }
     if (!this._history || !this._history.length) return;
-    this._updateEndTime();
+    this._updateTimeRange();
 
     const histGroups = this._history.reduce((res: any[][], item) => this._reducer(res, item), []);
 
-    // extend length to fill missing history
-    const requiredNumOfPoints = Math.ceil(this._hours * this._points);
-    histGroups.length = requiredNumOfPoints;
+    this.coords = this._calcPointsWithTime(histGroups);
+    
+    const values = this.coords.map(item => Number(item[2])).filter(v => !isNaN(v));
+    if (values.length > 0) {
+      this._min = Math.min(...values);
+      this._max = Math.max(...values);
+    }
+  }
 
-    this.coords = this._calcPoints(histGroups);
-    const values = this.coords.map(item => Number(item[2]));
-    this._min = Math.min(...values);
-    this._max = Math.max(...values);
+  private _updateTimeRange() {
+    this._endTime = new Date().getTime();
+    this._startTime = this._endTime - this._hours * ONE_HOUR;
   }
 
   private _reducer(res: any[][], item: any): any[][] {
-    const age = this._endTime - new Date(item.last_changed).getTime();
-    const interval = (age / ONE_HOUR * this._points) - this._hours * this._points;
-    if (interval < 0) {
-      const key = Math.floor(Math.abs(interval));
-      if (!res[key]) res[key] = [];
-      res[key].push(item);
-    } else {
-      res[0] = [item];
+    const timestamp = new Date(item.last_changed).getTime();
+    
+    if (timestamp < this._startTime || timestamp > this._endTime) {
+      return res;
     }
+    
+    const intervalSize = ONE_HOUR / 12; 
+    const intervalIndex = Math.floor((timestamp - this._startTime) / intervalSize);
+    
+    if (!res[intervalIndex]) res[intervalIndex] = [];
+    res[intervalIndex].push(item);
+    
     return res;
   }
 
-  private _calcPoints(history: any[][]): Array<[number, number, number]> {
-    let xRatio = this._width / (this._hours * this._points - 1);
-    xRatio = Number.isFinite(xRatio) ? xRatio : this._width;
-
+  private _calcPointsWithTime(groups: any[][]): Array<[number, number, number]> {
     const coords: Array<[number, number, number]> = [];
-    let last = history.filter(Boolean)[0];
-    let x: number;
-    for (let i = 0; i < history.length; i += 1) {
-      x = xRatio * i + this._margin.x;
-      if (history[i]) {
-        last = history[i];
-        coords.push([x, 0, this._calcPoint(last)]);
-      } else {
-        coords.push([x, 0, this._lastValue(last)]);
-      }
+    const totalWidth = this._width;
+    const timeRange = this._endTime - this._startTime;
+
+    for (let i = 0; i < groups.length; i++) {
+      if (!groups[i] || groups[i].length === 0) continue;
+
+      const timestamps = groups[i].map((item: any) => new Date(item.last_changed).getTime());
+      const avgTimestamp = timestamps.reduce((a: number, b: number) => a + b, 0) / timestamps.length;
+      
+      const x = ((avgTimestamp - this._startTime) / timeRange) * totalWidth + this._margin.x;
+      const y = 0; 
+      const value = this._calcPoint(groups[i]);
+      
+      coords.push([x, y, value]);
     }
+    coords.sort((a, b) => a[0] - b[0]);
+    
     return coords;
   }
 
   private _calcY(coords: Array<[number, number, number]>): Array<[number, number, number]> {
-    // account for logarithmic graph
+    if (coords.length === 0) return [];
+    
     const max = this._logarithmic ? Math.log10(Math.max(1, this._max)) : this._max;
     const min = this._logarithmic ? Math.log10(Math.max(1, this._min)) : this._min;
+    const range = max - min || 1;
 
-    const yRatio = ((max - min) / this._height) || 1;
-    const coords2 = coords.map((coord) => {
+    return coords.map((coord) => {
       const val = this._logarithmic ? Math.log10(Math.max(1, coord[2])) : coord[2];
-      const coordY = this._height - ((val - min) / yRatio) + this._margin.y * 2;
-      return [coord[0], coordY, coord[2]] as [number, number, number];
+      let y = this._height - ((val - min) / range) * this._height * 0.9 - this._height * 0.05 + this._margin.y * 2;
+      
+      if (isNaN(y)) {
+        y = this._height / 2;
+      }
+      
+      return [coord[0], Math.max(0, Math.min(this._height, y)), coord[2]];
     });
-
-    return coords2;
   }
 
   getPoints(): Array<[number, number, number, number]> {
-    let coords = [...this.coords];
-    if (coords.length === 1) {
-      coords[1] = [this._width + this._margin.x, 0, coords[0][2]];
-    }
-    coords = this._calcY(coords);
+    if (this.coords.length < 2) return [];
+    
+    let coords = this._calcY(this.coords);
+    
     if (this._smoothing) {
-      let last = coords[0];
-      coords.shift();
-      return coords.map((point, i) => {
-        const Z = this._midPoint(last[0], last[1], point[0], point[1]);
-        const sum = (last[2] + point[2]) / 2;
-        last = point;
-        return [Z[0], Z[1], sum, i + 1];
-      });
-    } else {
-      return coords.map((point, i) => [point[0], point[1], point[2], i]);
-    }
-  }
-
-  getPath(): string {
-    let coords = [...this.coords];
-    if (coords.length === 1) {
-      coords[1] = [this._width + this._margin.x, 0, coords[0][2]];
-    }
-    coords = this._calcY(coords);
-    
-    if (coords.length === 0) return '';
-    
-    let next: [number, number, number] | undefined;
-    let Z: [number, number] | [number, number, number];
-    let path = '';
-    let last = coords[0];
-    path += `M${last[0]},${last[1]}`;
-
-    for (let i = 1; i < coords.length; i++) {
-      next = coords[i];
-      Z = this._smoothing ? this._midPoint(last[0], last[1], next[0], next[1]) : next;
-      path += ` ${Z[0]},${Z[1]}`;
-      path += ` Q ${next[0]},${next[1]}`;
-      last = next;
+      const smoothed: Array<[number, number, number, number]> = [];
+      for (let i = 0; i < coords.length - 1; i++) {
+        const p1 = coords[i];
+        const p2 = coords[i + 1];
+        const steps = 3;
+        
+        for (let s = 0; s < steps; s++) {
+          const t = s / steps;
+          const x = p1[0] + (p2[0] - p1[0]) * t;
+          const y = p1[1] + (p2[1] - p1[1]) * t;
+          const val = p1[2] + (p2[2] - p1[2]) * t;
+          smoothed.push([x, y, val, i * steps + s]);
+        }
+      }
+      const last = coords[coords.length - 1];
+      smoothed.push([last[0], last[1], last[2], smoothed.length]);
+      
+      return smoothed;
     }
     
-    if (next) {
-      path += ` ${next[0]},${next[1]}`;
-    }
-    
-    return path;
-  }
-
-  private _midPoint(Ax: number, Ay: number, Bx: number, By: number): [number, number] {
-    const Zx = (Ax - Bx) / 2 + Bx;
-    const Zy = (Ay - By) / 2 + By;
-    return [Zx, Zy];
+    return coords.map((point, i) => [point[0], point[1], point[2], i]);
   }
 
   private _average(items: any[]): number {
@@ -245,29 +232,6 @@ export default class Graph {
       return 0;
     } else {
       return parseFloat(items[items.length - 1].state) || 0;
-    }
-  }
-
-  private _updateEndTime() {
-    this._endTime = new Date().getTime();
-    switch (this._groupBy) {
-      case 'month':
-        this._endTime = new Date().setMonth(new Date().getMonth() + 1);
-        break;
-      case 'date':
-        const date = new Date();
-        date.setDate(date.getDate() + 1);
-        date.setHours(0, 0, 0, 0);
-        this._endTime = date.getTime();
-        break;
-      case 'hour':
-        const hour = new Date();
-        hour.setHours(hour.getHours() + 1);
-        hour.setMinutes(0, 0, 0);
-        this._endTime = hour.getTime();
-        break;
-      default:
-        break;
     }
   }
 }

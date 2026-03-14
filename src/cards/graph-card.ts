@@ -12,28 +12,44 @@ export class GraphCard extends BaseCard {
   @state() private _loading = true;
   @state() private _graphPoints: Array<[number, number, number, number]> = [];
   @state() private _error = false;
+  @state() private _debugInfo: string = '';
 
   private _graph: Graph | null = null;
+  private _hasPartialData = false;
 
   connectedCallback() {
     super.connectedCallback();
+    console.log('🟢 GraphCard connected', {
+      sensor: this.sensor,
+      data: this.data,
+      hass: !!this.hass,
+      graphData: this.graphData
+    });
     this._initGraph();
   }
 
   updated(changedProps: Map<string, any>) {
     if (changedProps.has('sensor') || changedProps.has('graphData')) {
+      console.log('🔄 GraphCard updated', {
+        sensor: this.sensor,
+        graphData: this.graphData
+      });
       this._initGraph();
     }
   }
 
   private _initGraph() {
+    console.log('📊 Initializing graph for', this.sensor?.entity);
+    
     const width = 200;
     const height = this._getGraphHeight();
     const margin = { x: 0, y: 0 };
     const hours = this.sensor.hours_to_show || 24;
-    const points = 4; // увеличим для плавности
+    const points = 4;
     const aggregateFunc = this.sensor.aggregate || 'avg';
     const smoothing = this.sensor.smoothing !== false;
+
+    console.log('⚙️ Graph config:', { width, height, hours, points, aggregateFunc });
 
     this._graph = new Graph(
       width, 
@@ -49,54 +65,142 @@ export class GraphCard extends BaseCard {
 
     // Если данные уже есть в graphData
     if (this.graphData && this.graphData[this.sensor.entity]) {
+      console.log('📁 Using provided graphData');
       this._processData(this.graphData[this.sensor.entity]);
     } 
     // Если есть hass, загружаем данные
     else if (this.hass) {
+      console.log('🌐 Loading history from hass');
       this._loadHistory();
+    } else {
+      console.warn('⚠️ No data source available');
     }
   }
 
   private async _loadHistory() {
     if (!this.hass || !this.sensor?.entity || !this._graph) {
+      console.warn('❌ Cannot load history: missing dependencies', {
+        hass: !!this.hass,
+        entity: this.sensor?.entity,
+        graph: !!this._graph
+      });
       return;
     }
 
     this._loading = true;
     this._error = false;
+    this._hasPartialData = false;
 
     const hours = this.sensor.hours_to_show || 24;
     const endTime = new Date();
     const startTime = new Date(endTime.getTime() - hours * 60 * 60 * 1000);
 
+    console.log('📅 Time range:', {
+      start: startTime.toISOString(),
+      end: endTime.toISOString(),
+      hours
+    });
+
     try {
+      console.log('🔍 Fetching history for', this.sensor.entity);
       const history = await this.hass.callApi(
         'GET',
         `history/period/${startTime.toISOString()}?filter_entity_id=${this.sensor.entity}&minimal_response`
       );
 
-      if (!this.isConnected) return;
+      if (!this.isConnected) {
+        console.log('🔌 Component disconnected');
+        return;
+      }
+
+      console.log('📥 API response:', history);
 
       const entityHistory = history?.[0] || [];
-      this._processData(entityHistory);
+      console.log('📊 Entity history:', {
+        length: entityHistory.length,
+        first: entityHistory[0],
+        last: entityHistory[entityHistory.length - 1]
+      });
+      
+      if (entityHistory.length === 0) {
+        console.warn('⚠️ No history data for', this.sensor.entity);
+        this._hasPartialData = true;
+        this._graphPoints = [];
+        this._debugInfo = 'No history data';
+      } else {
+        this._processData(entityHistory);
+      }
     } catch (e) {
-      console.error('Failed to load history for', this.sensor.entity, e);
+      // Исправление: проверяем тип ошибки
+      console.error('❌ Failed to load history for', this.sensor.entity, e);
       this._error = true;
+      
+      // Безопасное получение сообщения об ошибке
+      if (e instanceof Error) {
+        this._debugInfo = `Error: ${e.message}`;
+      } else if (typeof e === 'string') {
+        this._debugInfo = `Error: ${e}`;
+      } else {
+        this._debugInfo = 'Unknown error';
+      }
     } finally {
       this._loading = false;
     }
   }
 
   private _processData(history: HistoryData[]) {
-    if (!this._graph || !history || history.length < 2) {
-      this._graphPoints = [];
+    console.log('🔧 Processing history data:', {
+      length: history.length,
+      first: history[0],
+      last: history[history.length - 1]
+    });
+
+    if (!this._graph) {
+      console.warn('❌ Graph not initialized');
       return;
     }
 
+    if (!history || history.length === 0) {
+      console.warn('⚠️ Empty history');
+      this._graphPoints = [];
+      this._hasPartialData = true;
+      this._debugInfo = 'Empty history';
+      this.requestUpdate();
+      return;
+    }
+
+    if (history.length < 2) {
+      console.warn('⚠️ Insufficient history points:', history.length);
+      this._hasPartialData = true;
+      this._graphPoints = [];
+      this._debugInfo = `Only ${history.length} point(s)`;
+      this.requestUpdate();
+      return;
+    }
+
+    console.log('📈 Setting graph history');
     this._graph.history = history;
     this._graph.update();
 
-    this._graphPoints = this._graph.getPoints();
+    const points = this._graph.getPoints();
+    console.log('📉 Graph points:', {
+      count: points?.length,
+      first: points?.[0],
+      last: points?.[points.length - 1]
+    });
+    
+    if (!points || points.length < 2) {
+      console.warn('⚠️ Not enough graph points generated');
+      this._hasPartialData = true;
+      this._graphPoints = [];
+      this._debugInfo = 'Graph generation failed';
+    } else {
+      console.log('✅ Graph generated successfully');
+      this._hasPartialData = false;
+      this._graphPoints = points;
+      this._debugInfo = `OK: ${points.length} points`;
+    }
+    
     this.requestUpdate();
   }
 
@@ -108,7 +212,10 @@ export class GraphCard extends BaseCard {
   }
 
   private _generatePath(points: Array<[number, number, number, number]>): string {
-    if (points.length < 2) return '';
+    if (points.length < 2) {
+      console.warn('Cannot generate path: insufficient points', points.length);
+      return '';
+    }
 
     let path = `M${points[0][0]},${points[0][1]}`;
     
@@ -116,6 +223,7 @@ export class GraphCard extends BaseCard {
       path += ` L${points[i][0]},${points[i][1]}`;
     }
 
+    console.log('📐 Generated path length:', path.length);
     return path;
   }
 
@@ -138,11 +246,26 @@ export class GraphCard extends BaseCard {
     return area;
   }
 
+  private _getMessageText(): string {
+    if (this._error) return 'Error loading data';
+    if (this._hasPartialData) return `Insufficient data: ${this._debugInfo}`;
+    if (this._graphPoints.length < 2) return 'No data';
+    return '';
+  }
+
   renderContent(): TemplateResult {
     const currentValue = parseFloat(this.data.state) || 0;
     const unit = this.sensor.unit || this.data.unit || '';
     const height = this._getGraphHeight();
     const width = 200;
+
+    console.log('🎨 Rendering graph card:', {
+      loading: this._loading,
+      error: this._error,
+      hasPartialData: this._hasPartialData,
+      pointsCount: this._graphPoints.length,
+      debugInfo: this._debugInfo
+    });
 
     if (this._loading) {
       return html`
@@ -158,14 +281,14 @@ export class GraphCard extends BaseCard {
       `;
     }
 
-    if (this._error || this._graphPoints.length < 2) {
+    if (this._error || this._hasPartialData || this._graphPoints.length < 2) {
       return html`
         <div class="graph-wrapper">
           <div class="graph-current">${currentValue.toFixed(1)}${unit}</div>
           <div class="graph-container" style="height: ${height}px">
             <div class="graph-placeholder">
               <ha-icon icon="mdi:chart-line"></ha-icon>
-              <span>No data</span>
+              <span>${this._getMessageText()}</span>
             </div>
           </div>
         </div>
@@ -175,6 +298,8 @@ export class GraphCard extends BaseCard {
     const path = this._generatePath(this._graphPoints);
     const area = this._generateArea(this._graphPoints, height);
     const entityId = this.sensor.entity.replace(/[^a-zA-Z0-9]/g, '-');
+
+    console.log('✅ Rendering actual graph with path length:', path.length);
 
     return html`
       <div class="graph-wrapper">
