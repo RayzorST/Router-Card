@@ -1,5 +1,9 @@
 # Router Card
-[![hacs\_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs) [![version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/)
+[![hacs\_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs) 
+![GitHub package.json version](https://img.shields.io/github/package-json/v/RayzorST/Router-Card)
+![GitHub License](https://img.shields.io/github/license/RayzorST/Router-Card)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/RayzorST/Router-Card/build.yml)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/RayzorST/Router-Card/validate.yml?label=validate)
 
 A highly customizable Home Assistant Lovelace card for monitoring routers, access points, and mesh network devices.
 
