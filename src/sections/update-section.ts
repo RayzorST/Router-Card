@@ -16,7 +16,7 @@ export class UpdateSection extends BaseSection {
   renderContent(): TemplateResult {
     if (!this.updateAvailable) return html``;
 
-    const label = this.config.label || this._localize('update.available');
+    const label = this._localize('update.available');
 
     return html`
       <div class="update-section" @click=${(e: Event) => this._handleClick(e, this.config.entity)}>

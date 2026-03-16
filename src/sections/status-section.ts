@@ -2,18 +2,42 @@ import { LitElement, html, css, TemplateResult, nothing } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { BaseSection } from './base-section';
 import { StatusSectionConfig, SensorData } from '../types/config';
+import { getLocalizedStringForHass } from '../localization';
 
 @customElement('router-status-section')
 export class StatusSection extends BaseSection {
   @property({ type: Object }) config!: StatusSectionConfig;
   @property({ type: Object }) leftData?: SensorData | null;
   @property({ type: Object }) rightData?: SensorData | null;
+  @property({ type: Object }) hass?: any;
+
+  private _localize(key: string, params?: Record<string, string>): string {
+    return getLocalizedStringForHass(this.hass, key, params);
+  }
 
   private _getStatusColor(status: string): string {
     const lower = status.toLowerCase();
     if (lower.includes('connected') || lower.includes('up') || lower === 'on' || lower === 'true' || lower === 'online') return '#27ae60';
     if (lower.includes('disconnected') || lower.includes('down') || lower === 'off' || lower === 'false' || lower === 'offline') return '#e74c3c';
     return '#f39c12';
+  }
+
+  private _getLocalizedStatus(status: string): string {
+    const lower = status.toLowerCase();
+    
+    if (lower.includes('connected')) return this._localize('status.connected');
+    if (lower.includes('disconnected')) return this._localize('status.disconnected');
+    
+    if (lower === 'on') return this._localize('status.on');
+    if (lower === 'off') return this._localize('status.off');
+
+    if (lower === 'online') return this._localize('status.online');
+    if (lower === 'offline') return this._localize('status.offline');
+    
+    if (lower === 'up') return this._localize('status.up');
+    if (lower === 'down') return this._localize('status.down');
+    
+    return status;
   }
 
   renderContent(): TemplateResult {
@@ -29,7 +53,7 @@ export class StatusSection extends BaseSection {
             <div class="status-item status-left" @click=${(e: Event) => this._handleClick(e, this.config.left_entity)}>
               <span class="status-label">${this.config.left_label || 'Status'}</span>
               <span class="status-value" style="color: ${this._getStatusColor(this.leftData!.state)}">
-                ● ${this.leftData!.state}
+                ● ${this._getLocalizedStatus(this.leftData!.state)}
               </span>
             </div>
           ` : nothing}

@@ -245,8 +245,8 @@ export class RouterCard extends LitElement implements LovelaceCard {
 
     // Используем переводы для 3 надписей
     const controllerText = this.config.controller ? this._t('badge.controller') : this._t('badge.repeater');
-    const rebootText = this.config.reboot_button?.label || this._t('reboot.button');
-    const updateText = this.config.update_section?.label || this._t('update.available');
+    const rebootText = this._t('reboot.button');
+    const updateText = this._t('update.available');
 
     return html`
       <ha-card class="router-card ${this.config.theme || 'default'}">
