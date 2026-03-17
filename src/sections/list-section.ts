@@ -98,7 +98,7 @@ export class ListSection extends BaseSection {
       css`
         .list-section {
           width: 100%;
-          margin-top: 16px;
+          margin: 16px 0px;
           overflow: hidden; /* Предотвращает вылезание контента */
         }
 

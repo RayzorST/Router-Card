@@ -82,7 +82,7 @@ export class BarCard extends BaseCard {
           height: 100%;
           border-radius: 6px; /* Увеличил радиус для пропорциональности */
           transition: width 0.3s ease;
-          background: var(--primary-color, #03a9f4);
+          background: var(--accent-color, #03a9f4);
         }
 
         /* Адаптивность для мобильных */

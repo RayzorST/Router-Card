@@ -28,7 +28,6 @@ export abstract class BaseSection extends LitElement {
       }
 
       .section {
-        margin-bottom: 16px;
         border-radius: 8px;
         transition: all 0.2s ease;
       }

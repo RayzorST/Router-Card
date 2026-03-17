@@ -75,6 +75,7 @@ export class StatusSection extends BaseSection {
       css`
         .status-section {
           padding: 12px;
+          margin: 16px;
           background: var(--secondary-background-color, #f5f5f5);
           border-radius: 8px;
         }

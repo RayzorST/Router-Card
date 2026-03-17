@@ -1,6 +1,6 @@
 {
   "name": "router-card",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Custom Router Card for Home Assistant",
   "main": "dist/router-card.js",
   "type": "module",

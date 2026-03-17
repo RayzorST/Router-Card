@@ -36,11 +36,11 @@ export class UpdateSection extends BaseSection {
           justify-content: center;
           gap: 8px;
           padding: 10px 16px;
-          margin-bottom: 16px;
-          background: rgba(243, 156, 28, 0.2);
-          border: 1px solid rgba(243, 156, 28, 0.5);
+          margin: 0px 16px 16px 16px;
+          background: rgba(var(--accent-color-rgb, 243, 156, 28), 0.2);
+          border: 1px solid var(--accent-color, #f39c12);
           border-radius: 8px;
-          color: #f39c12;
+          color: var(--accent-color, #f39c12);
           font-size: 13px;
           font-weight: 600;
           transition: all 0.2s ease;
@@ -48,17 +48,13 @@ export class UpdateSection extends BaseSection {
         }
 
         .update-section:hover {
-          background: rgba(243, 156, 28, 0.3);
+          background: rgba(var(--accent-color-rgb, 243, 156, 28), 0.3);
           transform: scale(1.02);
-        }
-
-        .dark .update-section {
-          background: rgba(243, 156, 28, 0.15);
         }
 
         ha-icon {
           --mdc-icon-size: 18px;
-          color: #f39c12;
+          color: var(--accent-color, #f39c12);
         }
       `
     ];

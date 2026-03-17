@@ -270,16 +270,19 @@ export class RouterCard extends LitElement implements LovelaceCard {
 
         <!-- Update Section -->
         ${showUpdate ? html`
-          <div class="update-section" @click=${(e: Event) => this._handleTap(this.config.update_section?.tap_action, this.config.update_section?.entity)}>
-            <ha-icon icon="mdi:arrow-up-circle"></ha-icon>
-            <span>${updateText}</span>
-          </div>
+          <router-update-section
+            .config=${this.config?.update_section}
+            .updateAvailable=${true}
+            .tap_action=${this.config.update_section?.tap_action}
+            .onClick=${this._handleTap.bind(this)}
+            .hass=${this.hass}
+          ></router-update-section>
         ` : nothing}
 
         <!-- Status Section -->
         <router-status-section
           .enabled=${this.config.status_section?.enabled || false}
-          .config=${this.config.status_section || {}}
+          .config=${this.config?.status_section}
           .leftData=${leftData}
           .rightData=${rightData}
           .tap_action=${this.config.status_section?.tap_action}
@@ -327,7 +330,6 @@ export class RouterCard extends LitElement implements LovelaceCard {
       :host { display: block; }
       
       ha-card {
-        padding: 16px;
         background: var(--card-background-color, #ffffff);
         border-radius: 12px;
         box-shadow: var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,0.1));
@@ -347,7 +349,7 @@ export class RouterCard extends LitElement implements LovelaceCard {
         justify-content: space-between;
         align-items: center;
         margin-bottom: 16px;
-        padding-bottom: 12px;
+        padding: 16px 16px 12px 16px;
         border-bottom: 1px solid var(--divider-color, #e0e0e0);
       }
       
@@ -428,39 +430,8 @@ export class RouterCard extends LitElement implements LovelaceCard {
         color: white; 
       }
       
-      .update-section {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 10px 16px;
-        margin-bottom: 16px;
-        background: rgba(243, 156, 28, 0.2);
-        border: 1px solid rgba(243, 156, 28, 0.5);
-        border-radius: 8px;
-        color: #f39c12;
-        font-size: 13px;
-        font-weight: 600;
-        transition: all 0.2s ease;
-        cursor: pointer;
-      }
-
-      .update-section:hover {
-        background: rgba(243, 156, 28, 0.3);
-        transform: scale(1.02);
-      }
-
-      .dark .update-section {
-        background: rgba(243, 156, 28, 0.15);
-      }
-
-      .update-section ha-icon {
-        --mdc-icon-size: 18px;
-        color: #f39c12;
-      }
-      
       .top-section {
-        margin-top: 16px;
+        margin: 16px 16px 0px 16px;
       }
       
       .cards-grid {
@@ -513,7 +484,7 @@ export class RouterCard extends LitElement implements LovelaceCard {
       }
       
       .list-section-wrapper {
-        margin-top: 16px;
+        margin: 16px 16px 0px 16px;
       }
 
       @media (max-width: 600px) {
