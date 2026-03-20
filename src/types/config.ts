@@ -13,7 +13,7 @@ export interface SensorConfig {
   name: string;
   icon?: string;
   unit?: string;
-  display_type?: 'bar' | 'graph';  // Только bar и graph для top сенсоров
+  display_type?: 'bar' | 'graph';
   graph_detail?: 1 | 2 | 3;
   hours_to_show?: number;
   min?: number;
@@ -45,11 +45,11 @@ export interface UpdateSectionConfig {
 // Кнопка перезагрузки
 export interface RebootButtonConfig {
   enabled: boolean;
-  entity?: string;           // Заменяем service на entity
+  entity?: string;
   confirmation?: boolean;
   label?: string;
   icon?: string;
-  service_data?: Record<string, any>; // Оставляем для совместимости
+  service_data?: Record<string, any>;
 }
 
 // Основная конфигурация карточки
