@@ -1,101 +1,34 @@
 {
   "common": {
-    "enable": "Enable",
-    "tapAction": "Tap Action",
-    "loading": "Loading...",
-    "router": "Router"
+    "device": "Device",
+    "reboot": "Reboot",
+    "update": "Update"
   },
-  "error": {
-    "entityNotFound": "Entity not found"
-  },
-  "badge": {
-    "controller": "Controller",
-    "repeater": "Repeater"
-  },
-  "tabs": {
-    "general": "General",
-    "status": "Status",
-    "topCards": "Top Cards",
-    "bottomList": "Bottom List"
-  },
-  "basic": {
-    "title": "Basic Settings",
-    "cardName": "Card Name",
-    "cardNamePlaceholder": "Router",
-    "cardIcon": "Card Icon",
-    "controllerMode": "Controller Mode",
-    "theme": "Theme",
-    "themeDefault": "Default",
-    "themeDark": "Dark",
-    "themeLight": "Light"
-  },
-  "update": {
-    "title": "Update Section",
-    "entity": "Update Entity",
-    "available": "Update Available"
-  },
-  "reboot": {
-    "title": "Reboot Button",
-    "entity": "Button Entity",
-    "icon": "Button Icon",
-    "confirmation": "Show Confirmation",
-    "button": "Reboot",
-    "confirm": "Are you sure you want to reboot the router?"
-  },
-  "status": {
-    "title": "Status Section",
-    "leftColumn": "Left Column",
-    "rightColumn": "Right Column",
-    "entity": "Entity",
-    "label": "Label",
-    "status": "Status",
-    "ip": "IP",
-    "connected": "Connected",
-    "disconnected": "Disconnected",
-    "on": "On",
-    "off": "Off",
-    "online": "Online",
-    "offline": "Offline",
-    "up": "Up",
-    "down": "Down"
-  },
-  "sensors": {
-    "add": "Add Sensor",
-    "empty": "No sensors configured. Click \"Add Sensor\" to start.",
-    "unnamed": "Unnamed Sensor",
-    "tap": "tap",
-    "remove": "Remove sensor",
-    "entity": "Entity",
-    "displayName": "Display Name",
-    "namePlaceholder": "Sensor Name",
-    "icon": "Icon (optional)",
-    "unit": "Unit",
-    "unitPlaceholder": "% or °C or GB",
-    "displayType": "Display Type",
-    "graphDetail": "Graph Detail",
-    "graphDetailLow": "Low (compact)",
-    "graphDetailMedium": "Medium",
-    "graphDetailHigh": "High (detailed)",
-    "hoursToShow": "Hours to Show",
-    "hours": "hours",
-    "smoothing": "Smoothing",
-    "aggregation": "Aggregation",
-    "minValue": "Min Value",
-    "maxValue": "Max Value",
-    "newSensor": "New Sensor",
-    "types": {
-      "bar": "Progress Bar",
-      "graph": "Graph"
+  "editor": {
+    "loading": "Loading editor...",
+    "sections": {
+      "device": "Device",
+      "display": "Display",
+      "update_badge": "Update Badge",
+      "reboot_badge": "Reboot Badge"
     },
-    "aggregate": {
-      "avg": "Average",
-      "max": "Maximum",
-      "min": "Minimum",
-      "last": "Last",
-      "first": "First",
-      "sum": "Sum",
-      "delta": "Delta",
-      "diff": "Difference"
+    "fields": {
+      "select_device": "Select device",
+      "select_device_hint": "Select a device - its model will be shown as title (or name if no model)",
+      "custom_title": "Custom title (optional)",
+      "custom_title_placeholder": "Leave empty to use device model/name",
+      "icon": "Icon",
+      "update_entity": "Update entity",
+      "update_entity_hint": "Entity that indicates update availability",
+      "update_label": "Custom label (optional)",
+      "update_label_placeholder": "Update",
+      "tap_action": "Tap action",
+      "button_entity": "Button entity",
+      "button_entity_hint": "Button or script entity to execute",
+      "button_icon": "Button icon",
+      "button_label": "Button label",
+      "button_label_placeholder": "Reboot",
+      "ask_confirmation": "Ask for confirmation"
     }
   }
 }

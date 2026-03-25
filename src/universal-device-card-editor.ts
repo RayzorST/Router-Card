@@ -51,7 +51,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
       update_section: {
         enabled: true,
         entity: '',
-        label: 'Update',
+        label: this._localize('common.update'),
         tap_action: { action: 'more-info' },
         ...migratedConfig.update_section,
       },
@@ -60,7 +60,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         entity: '',
         confirmation: true,
         icon: 'mdi:restart',
-        label: 'Reboot',
+        label: this._localize('common.reboot'),
         tap_action: { action: 'call-service' },
         ...migratedConfig.action_button,
       },
@@ -94,7 +94,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
 
   protected render() {
     if (!this.hass || !this._config || !this._componentsLoaded) {
-      return html`<div class="loading">Loading editor...</div>`;
+      return html`<div class="loading">${this._localize('editor.loading')}</div>`;
     }
 
     const updateSection = this._config.update_section!;
@@ -106,16 +106,16 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         <div class="section">
           <div class="section-header">
             <ha-icon icon="${ICONS.DEVICE}"></ha-icon>
-            <h3>Device</h3>
+            <h3>${this._localize('editor.sections.device')}</h3>
           </div>
           <ha-device-picker
             .hass=${this.hass}
             .value=${this._config.device_id || ''}
             @value-changed=${(e: any) => this._updateConfig('device_id', e.detail.value)}
-            label="Select device"
+            label="${this._localize('editor.fields.select_device')}"
           ></ha-device-picker>
           <div class="field-hint">
-            Select a device - its model will be shown as title (or name if no model)
+            ${this._localize('editor.fields.select_device_hint')}
           </div>
         </div>
 
@@ -123,20 +123,20 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         <div class="section">
           <div class="section-header">
             <ha-icon icon="${ICONS.DEVICE}"></ha-icon>
-            <h3>Display</h3>
+            <h3>${this._localize('editor.sections.display')}</h3>
           </div>
           
           <ha-textfield
             .value=${this._config.name || ''}
             @input=${(e: any) => this._updateConfig('name', e.target.value)}
-            label="Custom title (optional)"
-            placeholder="Leave empty to use device model/name"
+            label="${this._localize('editor.fields.custom_title')}"
+            placeholder="${this._localize('editor.fields.custom_title_placeholder')}"
           ></ha-textfield>
 
           <ha-icon-picker
             .value=${this._config.icon || 'mdi:devices'}
             @value-changed=${(e: any) => this._updateConfig('icon', e.detail.value)}
-            label="Icon"
+            label="${this._localize('editor.fields.icon')}"
           ></ha-icon-picker>
         </div>
 
@@ -144,7 +144,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         <div class="section">
           <div class="section-header">
             <ha-icon icon="${ICONS.UPDATE}"></ha-icon>
-            <h3>Update Badge</h3>
+            <h3>${this._localize('editor.sections.update_badge')}</h3>
             <ha-switch
               .checked=${updateSection.enabled !== false}
               @change=${(e: any) => this._updateNested('update_section', 'enabled', e.target.checked)}
@@ -158,14 +158,14 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
               @value-changed=${(e: any) => this._updateNested('update_section', 'entity', e.detail.value)}
               allow-custom-entity
               include-domains='["update", "binary_sensor"]'
-              label="Update entity"
+              label="${this._localize('editor.fields.update_entity')}"
             ></ha-entity-picker>
 
             <ha-textfield
               .value=${updateSection.label || ''}
               @input=${(e: any) => this._updateNested('update_section', 'label', e.target.value)}
-              label="Custom label (optional)"
-              placeholder="Update"
+              label="${this._localize('editor.fields.update_label')}"
+              placeholder="${this._localize('editor.fields.update_label_placeholder')}"
             ></ha-textfield>
 
             <ha-selector
@@ -175,7 +175,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
               .selector=${{
                 ui_action: {}
               }}
-              label="Tap action"
+              label="${this._localize('editor.fields.tap_action')}"
             ></ha-selector>
           ` : ''}
         </div>
@@ -184,7 +184,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         <div class="section">
           <div class="section-header">
             <ha-icon icon="${ICONS.RESTART}"></ha-icon>
-            <h3>Reboot Badge</h3>
+            <h3>${this._localize('editor.sections.reboot_badge')}</h3>
             <ha-switch
               .checked=${actionButton.enabled !== false}
               @change=${(e: any) => this._updateNested('action_button', 'enabled', e.target.checked)}
@@ -198,23 +198,23 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
               @value-changed=${(e: any) => this._updateNested('action_button', 'entity', e.detail.value)}
               allow-custom-entity
               include-domains='["button", "script"]'
-              label="Button entity"
+              label="${this._localize('editor.fields.button_entity')}"
             ></ha-entity-picker>
 
             <ha-icon-picker
               .value=${actionButton.icon || 'mdi:restart'}
               @value-changed=${(e: any) => this._updateNested('action_button', 'icon', e.detail.value)}
-              label="Button icon"
+              label="${this._localize('editor.fields.button_icon')}"
             ></ha-icon-picker>
 
             <ha-textfield
               .value=${actionButton.label || ''}
               @input=${(e: any) => this._updateNested('action_button', 'label', e.target.value)}
-              label="Button label"
-              placeholder="Reboot"
+              label="${this._localize('editor.fields.button_label')}"
+              placeholder="${this._localize('editor.fields.button_label_placeholder')}"
             ></ha-textfield>
 
-            <ha-formfield label="Ask for confirmation">
+            <ha-formfield label="${this._localize('editor.fields.ask_confirmation')}">
               <ha-switch
                 .checked=${actionButton.confirmation !== false}
                 @change=${(e: any) => this._updateNested('action_button', 'confirmation', e.target.checked)}
@@ -228,7 +228,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
               .selector=${{
                 ui_action: {}
               }}
-              label="Button action"
+              label="${this._localize('editor.fields.tap_action')}"
             ></ha-selector>
           ` : ''}
         </div>

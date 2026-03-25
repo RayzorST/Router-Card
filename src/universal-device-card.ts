@@ -5,7 +5,6 @@ import { HomeAssistant, LovelaceCard, LovelaceCardEditor } from 'custom-card-hel
 import { loadHaComponents } from '@kipk/load-ha-components';
 import { getLocalizedStringForHass } from './localization';
 import './universal-device-card-editor';
-import './sections/update-section';
 import { UniversalDeviceCardConfig } from './types/config';
 
 const DEFAULT_ICON = 'mdi:devices';
@@ -19,8 +18,8 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   @state() private deviceName?: string;
   @state() private deviceModel?: string;
 
-  private _t(key: string): string {
-    return getLocalizedStringForHass(this.hass, key);
+  private _localize(key: string, params?: Record<string, string>): string {
+    return getLocalizedStringForHass(this.hass, key, params);
   }
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
@@ -43,7 +42,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
         entity: '',
         confirmation: true,
         icon: 'mdi:restart',
-        label: 'Reboot',
+        label: '',
         tap_action: { action: 'call-service' },
       },
       cards: [],
@@ -342,15 +341,14 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     
     if (this.config.device_id && this.hass?.devices[this.config.device_id]) {
       const device = this.hass.devices[this.config.device_id];
-      const modelParts = [device.manufacturer, device.model, device.model_id].filter(Boolean);
-      const model = modelParts.join(' ');
+      const model = device.model;
       if (model) {
         return model;
       }
-      return device.name_by_user || device.name || 'Device';
+      return device.name_by_user || device.name || this._localize('common.device');
     }
     
-    return 'Device';
+    return this._localize('common.device');
   }
 
   private _getManufacturer(): string {
@@ -373,7 +371,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     
     const displayName = this._getDisplayName();
     const manufacturer = this._getManufacturer();
-    const updateLabel = this.config.update_section?.label || 'Update';
+    const updateLabel = this.config.update_section?.label || this._localize('common.update');
 
     return html`
       <ha-card class="device-card">
@@ -396,7 +394,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
               ${this.config.action_button?.enabled 
                 ? html`<div class="badge action-badge" @click=${this._handleAction}>
                     <ha-icon icon="${this.config.action_button.icon || 'mdi:restart'}"></ha-icon>
-                    <span>${this.config.action_button.label || 'Reboot'}</span>
+                    <span>${this.config.action_button.label || this._localize('common.reboot')}</span>
                   </div>` 
                 : nothing}
             </div>
