@@ -26,7 +26,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.PAT }}
-          file: dist/router-card.js
-          asset_name: router-card.js
+          file: dist/universal-device-card.js
+          asset_name: universal-device-card.js
           tag: ${{ github.event.release.tag_name }}
           overwrite: true
