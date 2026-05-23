@@ -1,11 +1,11 @@
-// src/universal-device-card-editor.ts
+// src/editor/universal-device-card-editor.ts
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { LovelaceCardEditor, fireEvent } from 'custom-card-helpers';
 import { UniversalDeviceCardConfig } from '../types/config';
 import { getLocalizedStringForHass } from '../localization';
 import { loadEditorComponents } from '../utils/editor-utils';
-import './sections/cards-section';
+// Удалите этот импорт: import './sections/cards-section';
 
 const ICONS = {
   DEVICE: 'mdi:devices',
@@ -94,7 +94,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
   }
 
   private _handleCardsChanged(e: CustomEvent): void {
-    this._updateConfig('cards', e.detail.cards);
+    this._updateConfig('cards', e.detail.config.cards);
   }
 
   protected render() {
@@ -239,12 +239,22 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         </div>
 
         <!-- Cards Section -->
-        <cards-section
-          .hass=${this.hass}
-          .cards=${this._config.cards || []}
-          .localize=${this._localize.bind(this)}
-          @cards-changed=${this._handleCardsChanged}
-        ></cards-section>
+        <div class="section">
+          <div class="section-header">
+            <ha-icon icon="mdi:card-multiple"></ha-icon>
+            <h3>${this._localize('editor.sections.cards')}</h3>
+          </div>
+
+          <hui-stack-card-editor
+            .hass=${this.hass}
+            .config=${{
+              type: 'vertical-stack',
+              title: '',
+              cards: this._config.cards || []
+            }}
+            @config-changed=${this._handleCardsChanged}
+          ></hui-stack-card-editor>
+        </div>
       </div>
     `;
   }
