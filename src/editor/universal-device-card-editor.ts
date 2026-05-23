@@ -1,10 +1,11 @@
-// universal-device-card-editor.ts
+// src/universal-device-card-editor.ts
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { LovelaceCardEditor, fireEvent } from 'custom-card-helpers';
-import { UniversalDeviceCardConfig } from './types/config';
-import { getLocalizedStringForHass } from './localization';
-import { loadHaComponents } from '@kipk/load-ha-components';
+import { UniversalDeviceCardConfig } from '../types/config';
+import { getLocalizedStringForHass } from '../localization';
+import { loadEditorComponents } from '../utils/editor-utils';
+import './sections/cards-section';
 
 const ICONS = {
   DEVICE: 'mdi:devices',
@@ -28,7 +29,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
   public async connectedCallback() {
     super.connectedCallback();
     if (!this._componentsLoaded) {
-      await loadHaComponents();
+      await loadEditorComponents();
       this._componentsLoaded = true;
       this.requestUpdate();
     }
@@ -92,6 +93,10 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
     fireEvent(this, 'config-changed', { config: newConfig });
   }
 
+  private _handleCardsChanged(e: CustomEvent): void {
+    this._updateConfig('cards', e.detail.cards);
+  }
+
   protected render() {
     if (!this.hass || !this._config || !this._componentsLoaded) {
       return html`<div class="loading">${this._localize('editor.loading')}</div>`;
@@ -122,7 +127,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         <!-- Display Settings -->
         <div class="section">
           <div class="section-header">
-            <ha-icon icon="${ICONS.DEVICE}"></ha-icon>
+            <ha-icon icon="mdi:palette"></ha-icon>
             <h3>${this._localize('editor.sections.display')}</h3>
           </div>
           
@@ -180,7 +185,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
           ` : ''}
         </div>
 
-        <!-- Reboot Badge -->
+        <!-- Action Button -->
         <div class="section">
           <div class="section-header">
             <ha-icon icon="${ICONS.RESTART}"></ha-icon>
@@ -232,6 +237,14 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
             ></ha-selector>
           ` : ''}
         </div>
+
+        <!-- Cards Section -->
+        <cards-section
+          .hass=${this.hass}
+          .cards=${this._config.cards || []}
+          .localize=${this._localize.bind(this)}
+          @cards-changed=${this._handleCardsChanged}
+        ></cards-section>
       </div>
     `;
   }
@@ -284,7 +297,8 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
       ha-icon-picker,
       ha-select,
       ha-entity-picker,
-      ha-selector {
+      ha-selector,
+      ha-device-picker {
         width: 100%;
       }
 

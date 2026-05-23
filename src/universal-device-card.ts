@@ -4,7 +4,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { HomeAssistant, LovelaceCard, LovelaceCardEditor } from 'custom-card-helpers';
 import { loadHaComponents } from '@kipk/load-ha-components';
 import { getLocalizedStringForHass } from './localization';
-import './universal-device-card-editor';
+import './editor/universal-device-card-editor';
 import { UniversalDeviceCardConfig } from './types/config';
 
 const DEFAULT_ICON = 'mdi:devices';
