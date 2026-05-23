@@ -11,14 +11,12 @@ export class UniversalDeviceCardEditor extends LitElement {
   @property({ attribute: false }) public lovelace?: any;
   
   @state() private _config!: UniversalDeviceCardConfig;
-  @state() private _editorLoaded = false;
 
   private _localize(key: string, params?: Record<string, string>): string {
     return getLocalizedStringForHass(this.hass, key, params);
   }
 
   public setConfig(config: UniversalDeviceCardConfig): void {
-    // Миграция старых настроек
     const migratedConfig = { ...config };
     delete migratedConfig.controller;
     
@@ -52,29 +50,6 @@ export class UniversalDeviceCardEditor extends LitElement {
     };
   }
 
-  protected firstUpdated(): void {
-    this._loadStackEditor();
-  }
-
-  private async _loadStackEditor(): Promise<void> {
-    try {
-      // Загружаем необходимые компоненты HA
-      await Promise.all([
-        customElements.whenDefined('hui-stack-card-editor'),
-        customElements.whenDefined('hui-card-picker'),
-        customElements.whenDefined('ha-device-picker'),
-        customElements.whenDefined('ha-entity-picker'),
-        customElements.whenDefined('ha-icon-picker'),
-        customElements.whenDefined('ha-textfield'),
-        customElements.whenDefined('ha-switch'),
-      ]);
-      this._editorLoaded = true;
-    } catch (error) {
-      console.error('Failed to load editor components:', error);
-      this._editorLoaded = true; // Показываем что есть
-    }
-  }
-
   private _updateConfig(changes: Partial<UniversalDeviceCardConfig>): void {
     const newConfig = { ...this._config, ...changes };
     this._config = newConfig;
@@ -83,135 +58,92 @@ export class UniversalDeviceCardEditor extends LitElement {
 
   private _handleCardsChanged(ev: CustomEvent): void {
     ev.stopPropagation();
-    if (ev.detail.config && ev.detail.config.cards) {
+    if (ev.detail.config?.cards) {
       this._updateConfig({ cards: ev.detail.config.cards });
     }
   }
 
   render() {
     if (!this.hass || !this._config) {
-      return html`<div style="padding: 16px;">Loading editor...</div>`;
+      return html``;
     }
 
     const updateSection = this._config.update_section!;
     const actionButton = this._config.action_button!;
 
     return html`
-      <div style="padding: 16px; display: flex; flex-direction: column; gap: 20px;">
+      <div class="editor">
+        <ha-device-picker
+          .hass=${this.hass}
+          .value=${this._config.device_id || ''}
+          @value-changed=${(e: any) => this._updateConfig({ device_id: e.detail.value })}
+        ></ha-device-picker>
+
+        <ha-textfield
+          label="Title"
+          .value=${this._config.name || ''}
+          @change=${(e: any) => this._updateConfig({ name: e.target.value })}
+        ></ha-textfield>
         
-        <!-- Device Picker -->
-        <div class="card-config">
-          <ha-device-picker
-            .hass=${this.hass}
-            .label=${'Device'}
-            .value=${this._config.device_id || ''}
-            @value-changed=${(e: any) => this._updateConfig({ device_id: e.detail.value })}
-          ></ha-device-picker>
-        </div>
+        <ha-icon-picker
+          .hass=${this.hass}
+          .value=${this._config.icon || 'mdi:devices'}
+          @value-changed=${(e: any) => this._updateConfig({ icon: e.detail.value })}
+        ></ha-icon-picker>
 
-        <!-- Display Settings -->
-        <div class="card-config">
-          <ha-textfield
-            .label=${'Title'}
-            .value=${this._config.name || ''}
-            @change=${(e: any) => this._updateConfig({ name: e.target.value })}
-          ></ha-textfield>
-          
-          <ha-icon-picker
-            .hass=${this.hass}
-            .label=${'Icon'}
-            .value=${this._config.icon || 'mdi:devices'}
-            @value-changed=${(e: any) => this._updateConfig({ icon: e.detail.value })}
-          ></ha-icon-picker>
-        </div>
-
-        <!-- Update Section -->
-        <div class="card-config">
-          <ha-switch
-            .checked=${updateSection.enabled !== false}
-            @change=${(e: any) => this._updateConfig({ 
-              update_section: { ...updateSection, enabled: e.target.checked } 
-            })}
-          >
-            Update Badge
-          </ha-switch>
-          
-          ${updateSection.enabled ? html`
-            <ha-entity-picker
-              .hass=${this.hass}
-              .label=${'Update Entity'}
-              .value=${updateSection.entity || ''}
-              @value-changed=${(e: any) => this._updateConfig({ 
-                update_section: { ...updateSection, entity: e.detail.value } 
-              })}
-            ></ha-entity-picker>
-          ` : ''}
-        </div>
-
-        <!-- Action Button -->
-        <div class="card-config">
-          <ha-switch
-            .checked=${actionButton.enabled !== false}
-            @change=${(e: any) => this._updateConfig({ 
-              action_button: { ...actionButton, enabled: e.target.checked } 
-            })}
-          >
-            Action Button
-          </ha-switch>
-          
-          ${actionButton.enabled ? html`
-            <ha-entity-picker
-              .hass=${this.hass}
-              .label=${'Action Entity'}
-              .value=${actionButton.entity || ''}
-              @value-changed=${(e: any) => this._updateConfig({ 
-                action_button: { ...actionButton, entity: e.detail.value } 
-              })}
-            ></ha-entity-picker>
-          ` : ''}
-        </div>
-
-        <!-- Cards Section -->
-        <div class="card-config">
-          ${this._editorLoaded ? html`
-            <hui-stack-card-editor
-              .hass=${this.hass}
-              .lovelace=${this.lovelace}
-              ._config=${{ cards: this._config.cards || [] }}
-              @config-changed=${this._handleCardsChanged}
-            ></hui-stack-card-editor>
-          ` : html`
-            <div style="padding: 16px; text-align: center;">
-              Loading card editor...
-            </div>
-          `}
-        </div>
+        <ha-switch
+          .checked=${updateSection.enabled !== false}
+          @change=${(e: any) => this._updateConfig({ 
+            update_section: { ...updateSection, enabled: e.target.checked } 
+          })}
+        ></ha-switch>
         
+        ${updateSection.enabled ? html`
+          <ha-entity-picker
+            .hass=${this.hass}
+            .value=${updateSection.entity || ''}
+            @value-changed=${(e: any) => this._updateConfig({ 
+              update_section: { ...updateSection, entity: e.detail.value } 
+            })}
+          ></ha-entity-picker>
+        ` : ''}
+
+        <ha-switch
+          .checked=${actionButton.enabled !== false}
+          @change=${(e: any) => this._updateConfig({ 
+            action_button: { ...actionButton, enabled: e.target.checked } 
+          })}
+        ></ha-switch>
+        
+        ${actionButton.enabled ? html`
+          <ha-entity-picker
+            .hass=${this.hass}
+            .value=${actionButton.entity || ''}
+            @value-changed=${(e: any) => this._updateConfig({ 
+              action_button: { ...actionButton, entity: e.detail.value } 
+            })}
+          ></ha-entity-picker>
+        ` : ''}
+
+        <!-- Просто используем, без всяких загрузок -->
+        <hui-stack-card-editor
+          .hass=${this.hass}
+          .lovelace=${this.lovelace}
+          ._config=${{ cards: this._config.cards || [] }}
+          @config-changed=${this._handleCardsChanged}
+        ></hui-stack-card-editor>
       </div>
     `;
   }
 
   static get styles() {
     return css`
-      :host {
-        display: block;
-      }
-      
-      .card-config {
+      .editor {
         display: flex;
         flex-direction: column;
-        gap: 8px;
-      }
-      
-      ha-textfield {
-        width: 100%;
+        gap: 16px;
+        padding: 16px;
       }
     `;
-  }
-}
-
-declare global {
-  interface HTMLElementTagNameMap {
-    'universal-device-card-editor': UniversalDeviceCardEditor;
   }
 }

@@ -39,8 +39,18 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
 
   // ВАЖНО: возвращаем getConfigElement для кастомного редактора
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
+    // 🔥 Триггерим загрузку редактора стека из HA
+    const stackCard = document.createElement('hui-vertical-stack-card');
+    if ('getConfigElement' in stackCard.constructor && 
+        typeof (stackCard.constructor as any).getConfigElement === 'function') {
+      (stackCard.constructor as any).getConfigElement();
+    }
+    
+    // Загружаем наш редактор
     await import('./universal-device-card-editor');
-    return document.createElement('universal-device-card-editor');
+    
+    // Приводим к правильному типу
+    return document.createElement('universal-device-card-editor') as unknown as LovelaceCardEditor;
   }
 
   public static getStubConfig(): UniversalDeviceCardConfig {
