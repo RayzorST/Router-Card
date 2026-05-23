@@ -21,44 +21,16 @@ export const loadEditorComponents = async (): Promise<void> => {
     'ha-color-picker',
     'ha-badge',
     'ha-expansion-panel',
+    'hui-card-picker', // <-- Ключевой компонент
   ];
   
   await loadHaComponents(requiredComponents);
 };
 
-// Тип для helpers, содержащий createCardPicker
-interface CardHelpers {
-  createCardElement(config: any): any;
-  createCardPicker(): any;
-}
-
-// Загрузка helpers Home Assistant для доступа к hui-card-picker
-export const loadCardHelpers = async (): Promise<CardHelpers> => {
+// Загрузка helpers Home Assistant (нужна для создания дочерних карт)
+export const loadCardHelpers = async (): Promise<any> => {
   if ((window as any).loadCardHelpers) {
     return (window as any).loadCardHelpers();
   }
   throw new Error('loadCardHelpers not available');
-};
-
-// Создание элемента hui-card-picker
-export const createCardPicker = async (hass: any, config: any, callback: (config: any) => void): Promise<HTMLElement> => {
-  const helpers = await loadCardHelpers();
-  
-  // hui-card-picker создается через helpers
-  const picker = helpers.createCardPicker();
-  
-  // Настройка пикера
-  if (picker && typeof picker.setConfig === 'function') {
-    picker.hass = hass;
-    picker.config = config;
-    
-    // Подписка на изменения конфигурации карты
-    picker.addEventListener('config-changed', (e: CustomEvent) => {
-      if (e.detail && e.detail.config) {
-        callback(e.detail.config);
-      }
-    });
-  }
-  
-  return picker;
 };

@@ -5,8 +5,6 @@ import { HomeAssistant, LovelaceCard, LovelaceCardEditor } from 'custom-card-hel
 import { loadHaComponents } from '@kipk/load-ha-components';
 import { getLocalizedStringForHass } from './localization';
 import { loadCardHelpers } from './utils/editor-utils';
-import './editor/universal-device-card-editor';
-import './editor/sections/cards-section';
 import { UniversalDeviceCardConfig } from './types/config';
 
 const DEFAULT_ICON = 'mdi:devices';
@@ -39,7 +37,9 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     return getLocalizedStringForHass(this._hass, key, params);
   }
 
+  // ВАЖНО: возвращаем getConfigElement для кастомного редактора
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
+    await import('./editor/universal-device-card-editor');
     return document.createElement('universal-device-card-editor');
   }
 
@@ -142,7 +142,6 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
             element.hass = this._hass;
           }
           
-          // Подписка на перестроение карты
           element.addEventListener('ll-rebuild', () => {
             this._createChildCards();
           });

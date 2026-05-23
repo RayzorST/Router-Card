@@ -1,4 +1,3 @@
-// src/editor/universal-device-card-editor.ts
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { LovelaceCardEditor, fireEvent } from 'custom-card-helpers';
@@ -6,14 +5,6 @@ import { UniversalDeviceCardConfig } from '../types/config';
 import { getLocalizedStringForHass } from '../localization';
 import { loadEditorComponents } from '../utils/editor-utils';
 import './sections/cards-section';
-
-const ICONS = {
-  DEVICE: 'mdi:devices',
-  RESTART: 'mdi:restart',
-  UPDATE: 'mdi:update',
-};
-
-type NestedConfigKey = 'update_section' | 'action_button';
 
 @customElement('universal-device-card-editor')
 export class UniversalDeviceCardEditor extends LitElement implements LovelaceCardEditor {
@@ -26,7 +17,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
     return getLocalizedStringForHass(this.hass, key, params);
   }
 
-  public async connectedCallback() {
+  async connectedCallback() {
     super.connectedCallback();
     if (!this._componentsLoaded) {
       await loadEditorComponents();
@@ -36,6 +27,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
   }
 
   public setConfig(config: UniversalDeviceCardConfig): void {
+    // Миграция старых настроек
     const migratedConfig = { ...config };
     delete migratedConfig.controller;
     
@@ -75,29 +67,11 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
     fireEvent(this, 'config-changed', { config: newConfig });
   }
 
-  private _updateNested<K extends NestedConfigKey>(
-    section: K, 
-    field: string, 
-    value: any
-  ): void {
-    const newConfig = { ...this._config };
-    const currentSection = newConfig[section] || {};
-    
-    const updatedSection = {
-      ...currentSection,
-      [field]: value
-    };
-    
-    (newConfig[section] as any) = updatedSection;
-    this._config = newConfig;
-    fireEvent(this, 'config-changed', { config: newConfig });
-  }
-
   private _handleCardsChanged(e: CustomEvent): void {
     this._updateConfig('cards', e.detail.cards);
   }
 
-  protected render() {
+  render() {
     if (!this.hass || !this._config || !this._componentsLoaded) {
       return html`<div class="loading">Loading editor...</div>`;
     }
@@ -107,11 +81,9 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
 
     return html`
       <div class="editor">
+        <!-- Device Picker -->
         <div class="section">
-          <div class="section-header">
-            <ha-icon icon="${ICONS.DEVICE}"></ha-icon>
-            <h3>${this._localize('editor.sections.device')}</h3>
-          </div>
+          <h3>Device</h3>
           <ha-device-picker
             .hass=${this.hass}
             .value=${this._config.device_id || ''}
@@ -119,15 +91,13 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
           ></ha-device-picker>
         </div>
 
+        <!-- Display Settings -->
         <div class="section">
-          <div class="section-header">
-            <ha-icon icon="mdi:palette"></ha-icon>
-            <h3>${this._localize('editor.sections.display')}</h3>
-          </div>
+          <h3>Display</h3>
           <ha-textfield
             .value=${this._config.name || ''}
             @input=${(e: any) => this._updateConfig('name', e.target.value)}
-            label="${this._localize('editor.fields.custom_title')}"
+            label="Title (optional)"
           ></ha-textfield>
           <ha-icon-picker
             .value=${this._config.icon || 'mdi:devices'}
@@ -135,44 +105,39 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
           ></ha-icon-picker>
         </div>
 
+        <!-- Update Section -->
         <div class="section">
-          <div class="section-header">
-            <ha-icon icon="${ICONS.UPDATE}"></ha-icon>
-            <h3>${this._localize('editor.sections.update_badge')}</h3>
-            <ha-switch
-              .checked=${updateSection.enabled !== false}
-              @change=${(e: any) => this._updateNested('update_section', 'enabled', e.target.checked)}
-            ></ha-switch>
-          </div>
+          <h3>Update Badge</h3>
+          <ha-switch
+            .checked=${updateSection.enabled !== false}
+            @change=${(e: any) => this._updateConfig('update_section', { ...updateSection, enabled: e.target.checked })}
+          ></ha-switch>
           ${updateSection.enabled ? html`
             <ha-entity-picker
               .hass=${this.hass}
               .value=${updateSection.entity || ''}
-              @value-changed=${(e: any) => this._updateNested('update_section', 'entity', e.detail.value)}
-              include-domains='["update", "binary_sensor"]'
+              @value-changed=${(e: any) => this._updateConfig('update_section', { ...updateSection, entity: e.detail.value })}
             ></ha-entity-picker>
           ` : ''}
         </div>
 
+        <!-- Action Button -->
         <div class="section">
-          <div class="section-header">
-            <ha-icon icon="${ICONS.RESTART}"></ha-icon>
-            <h3>${this._localize('editor.sections.reboot_badge')}</h3>
-            <ha-switch
-              .checked=${actionButton.enabled !== false}
-              @change=${(e: any) => this._updateNested('action_button', 'enabled', e.target.checked)}
-            ></ha-switch>
-          </div>
+          <h3>Action Button</h3>
+          <ha-switch
+            .checked=${actionButton.enabled !== false}
+            @change=${(e: any) => this._updateConfig('action_button', { ...actionButton, enabled: e.target.checked })}
+          ></ha-switch>
           ${actionButton.enabled ? html`
             <ha-entity-picker
               .hass=${this.hass}
               .value=${actionButton.entity || ''}
-              @value-changed=${(e: any) => this._updateNested('action_button', 'entity', e.detail.value)}
-              include-domains='["button", "script"]'
+              @value-changed=${(e: any) => this._updateConfig('action_button', { ...actionButton, entity: e.detail.value })}
             ></ha-entity-picker>
           ` : ''}
         </div>
 
+        <!-- Cards Section -->
         <cards-section
           .hass=${this.hass}
           .cards=${this._config.cards || []}
@@ -190,43 +155,19 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         flex-direction: column;
         gap: 20px;
       }
-
       .section {
         display: flex;
         flex-direction: column;
         gap: 12px;
+        padding: 16px;
         background: var(--card-background-color);
         border-radius: 12px;
-        padding: 16px;
         border: 1px solid var(--divider-color);
       }
-
-      .section-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .section-header ha-icon {
-        --mdc-icon-size: 20px;
-        color: var(--primary-color);
-      }
-
-      .section-header h3 {
+      h3 {
         margin: 0;
         font-size: 15px;
         font-weight: 600;
-        flex: 1;
-      }
-
-      ha-textfield, ha-icon-picker, ha-entity-picker, ha-device-picker {
-        width: 100%;
-      }
-
-      .loading {
-        padding: 20px;
-        text-align: center;
-        color: var(--secondary-text-color);
       }
     `;
   }
