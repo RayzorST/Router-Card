@@ -21,13 +21,12 @@ export const loadEditorComponents = async (): Promise<void> => {
     'ha-color-picker',
     'ha-badge',
     'ha-expansion-panel',
-    'hui-card-picker', // <-- Ключевой компонент
+    'hui-card-picker',
   ];
   
   await loadHaComponents(requiredComponents);
 };
 
-// Загрузка helpers Home Assistant (нужна для создания дочерних карт)
 export const loadCardHelpers = async (): Promise<any> => {
   if ((window as any).loadCardHelpers) {
     return (window as any).loadCardHelpers();

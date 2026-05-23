@@ -1,43 +1,43 @@
-import { LovelaceCardConfig } from 'custom-card-helpers';
-
-// Типы для действий по нажатию
-export interface TapActionConfig {
-  action: 'more-info' | 'navigate' | 'url' | 'call-service' | 'toggle' | 'none';
-  navigation_path?: string;
-  url_path?: string;
-  service?: string;
-  service_data?: Record<string, any>;
-}
-
-// Конфигурация секции обновления
-export interface UpdateSectionConfig {
-  enabled: boolean;
-  entity: string;
-  label?: string;
-  tap_action?: TapActionConfig;
-}
-
-// Конфигурация кнопки действия
-export interface ActionButtonConfig {
-  enabled: boolean;
-  entity?: string;
-  confirmation?: boolean;
-  label?: string;
+export interface ChipConfig {
+  type: 'entity' | 'update' | 'action' | 'template';
   icon?: string;
-  tap_action?: TapActionConfig;
-  service_data?: Record<string, any>;
+  label?: string;
+  entity_id?: string;
+  tap_action?: {
+    action: 'more-info' | 'navigate' | 'url' | 'call-service' | 'none';
+    navigation_path?: string;
+    url_path?: string;
+    service?: string;
+    service_data?: Record<string, any>;
+  };
+  template?: string;
+  show_when?: {
+    entity_id?: string;
+    state?: string;
+  };
 }
 
-// Основная конфигурация карточки
 export interface UniversalDeviceCardConfig {
   type: string;
   name?: string;
   icon?: string;
-  theme?: 'default' | 'dark' | 'light';
-  device_id?: string; 
-  update_section?: UpdateSectionConfig;
-  action_button?: ActionButtonConfig;
-  cards: LovelaceCardConfig[];
-  controller?: boolean;
-  reboot_button?: ActionButtonConfig;
+  device_id?: string;
+  chips?: ChipConfig[];
+  cards?: any[];
+  update_section?: {
+    enabled?: boolean;
+    entity?: string;
+    label?: string;
+    tap_action?: any;
+  };
+  action_button?: {
+    enabled?: boolean;
+    entity?: string;
+    confirmation?: boolean;
+    icon?: string;
+    label?: string;
+    tap_action?: any;
+  };
+  controller?: any;
+  reboot_button?: any;
 }

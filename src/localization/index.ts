@@ -8,38 +8,48 @@ const translations: Record<Language, any> = {
   ru,
 };
 
-export function getLocalizedString(lang: Language, key: string, params?: Record<string, string>): string {
-  const keys = key.split('.');
-  let value: any = translations[lang] || translations.en;
-  
-  for (const k of keys) {
-    if (!value || !value[k]) {
-      console.warn(`Translation key not found: ${key} for language: ${lang}`);
-      return key;
+function getNestedValue(obj: any, path: string): any {
+  return path.split('.').reduce((current, key) => {
+    if (current && typeof current === 'object' && key in current) {
+      return current[key];
     }
-    value = value[k];
+    return undefined;
+  }, obj);
+}
+
+export function getLocalizedString(lang: Language, key: string, params?: Record<string, string>): string {
+  let value = getNestedValue(translations[lang], key);
+  
+  if (value === undefined && lang !== 'en') {
+    value = getNestedValue(translations.en, key);
   }
   
-  if (typeof value !== 'string') {
-    console.warn(`Translation value is not a string: ${key} for language: ${lang}`);
-    return key;
+  if (value === undefined || typeof value !== 'string') {
+    const parts = key.split('.');
+    const fallback = parts[parts.length - 1]
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    console.warn(`Translation missing: ${key} (${lang})`);
+    return fallback;
   }
   
   if (params) {
-    return value.replace(/\{\{(\w+)\}\}/g, (match, param) => params[param] || match);
+    return value.replace(/\{\{(\w+)\}\}/g, (_: string, param: string) => {
+      return params[param] !== undefined ? params[param] : `{{${param}}}`;
+    });
   }
   
   return value;
 }
 
 export function getLocalizedStringForHass(hass: any, key: string, params?: Record<string, string>): string {
-  const lang = (hass?.locale?.language || 'en') as Language;
+  const lang: Language = (hass?.locale?.language === 'ru' ? 'ru' : 'en');
   return getLocalizedString(lang, key, params);
 }
 
 let currentLanguage: Language = 'en';
 
-export function setLanguage(lang: Language) {
+export function setLanguage(lang: Language): void {
   currentLanguage = lang;
 }
 

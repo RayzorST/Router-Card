@@ -5,30 +5,28 @@
     "update": "Update"
   },
   "editor": {
-    "loading": "Loading editor...",
-    "sections": {
-      "device": "Device",
-      "display": "Display",
-      "update_badge": "Update Badge",
-      "reboot_badge": "Reboot Badge"
+    "device": "Device",
+    "display": "Display",
+    "title": "Title",
+    "title_placeholder": "Leave empty to use device name",
+    "icon": "Icon",
+    "chips": "Chips",
+    "add_chip": "Add Chip",
+    "chip_type": "Type",
+    "chip_label": "Label",
+    "chip_icon": "Icon",
+    "chip_entity": "Entity",
+    "chip_template": "Template",
+    "chip_visibility": "Visibility Conditions",
+    "chip_show_when_entity": "Show when entity",
+    "chip_show_when_state": "Has state",
+    "chip_types": {
+      "entity": "Entity State",
+      "update": "Update Available",
+      "action": "Action Button",
+      "template": "Template"
     },
-    "fields": {
-      "select_device": "Select device",
-      "select_device_hint": "Select a device - its model will be shown as title (or name if no model)",
-      "custom_title": "Custom title (optional)",
-      "custom_title_placeholder": "Leave empty to use device model/name",
-      "icon": "Icon",
-      "update_entity": "Update entity",
-      "update_entity_hint": "Entity that indicates update availability",
-      "update_label": "Custom label (optional)",
-      "update_label_placeholder": "Update",
-      "tap_action": "Tap action",
-      "button_entity": "Button entity",
-      "button_entity_hint": "Button or script entity to execute",
-      "button_icon": "Button icon",
-      "button_label": "Button label",
-      "button_label_placeholder": "Reboot",
-      "ask_confirmation": "Ask for confirmation"
-    }
+    "cards": "Cards",
+    "loading": "Loading..."
   }
 }
