@@ -99,7 +99,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
 
   protected render() {
     if (!this.hass || !this._config || !this._componentsLoaded) {
-      return html`<div class="loading">Loading...</div>`;
+      return html`<div class="loading">Loading editor...</div>`;
     }
 
     const updateSection = this._config.update_section!;

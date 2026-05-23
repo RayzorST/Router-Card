@@ -4,6 +4,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { HomeAssistant, LovelaceCard, LovelaceCardEditor } from 'custom-card-helpers';
 import { loadHaComponents } from '@kipk/load-ha-components';
 import { getLocalizedStringForHass } from './localization';
+import { loadCardHelpers } from './utils/editor-utils';
 import './editor/universal-device-card-editor';
 import './editor/sections/cards-section';
 import { UniversalDeviceCardConfig } from './types/config';
@@ -28,7 +29,7 @@ interface ExtendedHomeAssistant extends HomeAssistant {
 export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   @state() private config!: UniversalDeviceCardConfig;
   @state() private componentsLoaded = false;
-  @state() private childCards: any[] = [];
+  @state() private childCards: LovelaceCard[] = [];
   @state() private deviceName?: string;
   @state() private deviceModel?: string;
 
@@ -78,9 +79,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     this.config = migratedConfig;
     
     this._updateDeviceInfo();
-    
     this._loadComponents();
-    this._createChildCards();
   }
 
   @property()
@@ -119,6 +118,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     try {
       await loadHaComponents();
       this.componentsLoaded = true;
+      await this._createChildCards();
       this.requestUpdate();
     } catch (e) {
       console.warn('Failed to load HA components:', e);
@@ -131,31 +131,40 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
       return;
     }
     
-    const helpers = await (window as any).loadCardHelpers();
-    const cards: any[] = [];
-    
-    for (const cardConfig of this.config.cards) {
-      try {
-        const element = helpers.createCardElement(cardConfig);
-        if (this._hass) {
-          element.hass = this._hass;
+    try {
+      const helpers = await loadCardHelpers();
+      const cards: LovelaceCard[] = [];
+      
+      for (const cardConfig of this.config.cards) {
+        try {
+          const element = helpers.createCardElement(cardConfig) as LovelaceCard;
+          if (this._hass) {
+            element.hass = this._hass;
+          }
+          
+          // Подписка на перестроение карты
+          element.addEventListener('ll-rebuild', () => {
+            this._createChildCards();
+          });
+          
+          cards.push(element);
+        } catch (e) {
+          console.error('Failed to create card:', cardConfig, e);
         }
-        element.addEventListener('ll-rebuild', () => {
-          this._createChildCards();
-        });
-        cards.push(element);
-      } catch (e) {
-        console.error('Failed to create card:', cardConfig, e);
       }
+      
+      this.childCards = cards;
+      
+      await this.updateComplete;
+      setTimeout(() => {
+        this._styleCards();
+      }, 100);
+      
+      this.requestUpdate();
+    } catch (e) {
+      console.error('Failed to load card helpers:', e);
+      this.childCards = [];
     }
-    this.childCards = cards;
-    
-    await this.updateComplete;
-    setTimeout(() => {
-      this._styleCards();
-    }, 100);
-    
-    this.requestUpdate();
   }
 
   private _styleCards() {
