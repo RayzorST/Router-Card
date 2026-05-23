@@ -5,11 +5,11 @@ import { HomeAssistant, LovelaceCard, LovelaceCardEditor } from 'custom-card-hel
 import { loadHaComponents } from '@kipk/load-ha-components';
 import { getLocalizedStringForHass } from './localization';
 import './editor/universal-device-card-editor';
+import './editor/sections/cards-section';
 import { UniversalDeviceCardConfig } from './types/config';
 
 const DEFAULT_ICON = 'mdi:devices';
 
-// Расширяем тип HomeAssistant для поддержки devices
 interface ExtendedHomeAssistant extends HomeAssistant {
   devices: {
     [device_id: string]: {
@@ -83,7 +83,6 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     this._createChildCards();
   }
 
-  // Геттер/сеттер для hass
   @property()
   public get hass(): ExtendedHomeAssistant | undefined {
     return this._hass;
@@ -419,7 +418,6 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
           </div>
         </div>
 
-        <!-- Cards Container -->
         <div class="cards-container">
           ${this.childCards.map(card => html`${card}`)}
         </div>

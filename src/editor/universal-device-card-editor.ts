@@ -5,7 +5,7 @@ import { LovelaceCardEditor, fireEvent } from 'custom-card-helpers';
 import { UniversalDeviceCardConfig } from '../types/config';
 import { getLocalizedStringForHass } from '../localization';
 import { loadEditorComponents } from '../utils/editor-utils';
-// Удалите этот импорт: import './sections/cards-section';
+import './sections/cards-section';
 
 const ICONS = {
   DEVICE: 'mdi:devices',
@@ -94,12 +94,12 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
   }
 
   private _handleCardsChanged(e: CustomEvent): void {
-    this._updateConfig('cards', e.detail.config.cards);
+    this._updateConfig('cards', e.detail.cards);
   }
 
   protected render() {
     if (!this.hass || !this._config || !this._componentsLoaded) {
-      return html`<div class="loading">${this._localize('editor.loading')}</div>`;
+      return html`<div class="loading">Loading...</div>`;
     }
 
     const updateSection = this._config.update_section!;
@@ -107,7 +107,6 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
 
     return html`
       <div class="editor">
-        <!-- Device Selection -->
         <div class="section">
           <div class="section-header">
             <ha-icon icon="${ICONS.DEVICE}"></ha-icon>
@@ -117,35 +116,25 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
             .hass=${this.hass}
             .value=${this._config.device_id || ''}
             @value-changed=${(e: any) => this._updateConfig('device_id', e.detail.value)}
-            label="${this._localize('editor.fields.select_device')}"
           ></ha-device-picker>
-          <div class="field-hint">
-            ${this._localize('editor.fields.select_device_hint')}
-          </div>
         </div>
 
-        <!-- Display Settings -->
         <div class="section">
           <div class="section-header">
             <ha-icon icon="mdi:palette"></ha-icon>
             <h3>${this._localize('editor.sections.display')}</h3>
           </div>
-          
           <ha-textfield
             .value=${this._config.name || ''}
             @input=${(e: any) => this._updateConfig('name', e.target.value)}
             label="${this._localize('editor.fields.custom_title')}"
-            placeholder="${this._localize('editor.fields.custom_title_placeholder')}"
           ></ha-textfield>
-
           <ha-icon-picker
             .value=${this._config.icon || 'mdi:devices'}
             @value-changed=${(e: any) => this._updateConfig('icon', e.detail.value)}
-            label="${this._localize('editor.fields.icon')}"
           ></ha-icon-picker>
         </div>
 
-        <!-- Update Badge -->
         <div class="section">
           <div class="section-header">
             <ha-icon icon="${ICONS.UPDATE}"></ha-icon>
@@ -155,37 +144,16 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
               @change=${(e: any) => this._updateNested('update_section', 'enabled', e.target.checked)}
             ></ha-switch>
           </div>
-
           ${updateSection.enabled ? html`
             <ha-entity-picker
               .hass=${this.hass}
               .value=${updateSection.entity || ''}
               @value-changed=${(e: any) => this._updateNested('update_section', 'entity', e.detail.value)}
-              allow-custom-entity
               include-domains='["update", "binary_sensor"]'
-              label="${this._localize('editor.fields.update_entity')}"
             ></ha-entity-picker>
-
-            <ha-textfield
-              .value=${updateSection.label || ''}
-              @input=${(e: any) => this._updateNested('update_section', 'label', e.target.value)}
-              label="${this._localize('editor.fields.update_label')}"
-              placeholder="${this._localize('editor.fields.update_label_placeholder')}"
-            ></ha-textfield>
-
-            <ha-selector
-              .hass=${this.hass}
-              .value=${updateSection.tap_action || { action: 'more-info' }}
-              @value-changed=${(e: any) => this._updateNested('update_section', 'tap_action', e.detail.value)}
-              .selector=${{
-                ui_action: {}
-              }}
-              label="${this._localize('editor.fields.tap_action')}"
-            ></ha-selector>
           ` : ''}
         </div>
 
-        <!-- Action Button -->
         <div class="section">
           <div class="section-header">
             <ha-icon icon="${ICONS.RESTART}"></ha-icon>
@@ -195,66 +163,21 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
               @change=${(e: any) => this._updateNested('action_button', 'enabled', e.target.checked)}
             ></ha-switch>
           </div>
-
           ${actionButton.enabled ? html`
             <ha-entity-picker
               .hass=${this.hass}
               .value=${actionButton.entity || ''}
               @value-changed=${(e: any) => this._updateNested('action_button', 'entity', e.detail.value)}
-              allow-custom-entity
               include-domains='["button", "script"]'
-              label="${this._localize('editor.fields.button_entity')}"
             ></ha-entity-picker>
-
-            <ha-icon-picker
-              .value=${actionButton.icon || 'mdi:restart'}
-              @value-changed=${(e: any) => this._updateNested('action_button', 'icon', e.detail.value)}
-              label="${this._localize('editor.fields.button_icon')}"
-            ></ha-icon-picker>
-
-            <ha-textfield
-              .value=${actionButton.label || ''}
-              @input=${(e: any) => this._updateNested('action_button', 'label', e.target.value)}
-              label="${this._localize('editor.fields.button_label')}"
-              placeholder="${this._localize('editor.fields.button_label_placeholder')}"
-            ></ha-textfield>
-
-            <ha-formfield label="${this._localize('editor.fields.ask_confirmation')}">
-              <ha-switch
-                .checked=${actionButton.confirmation !== false}
-                @change=${(e: any) => this._updateNested('action_button', 'confirmation', e.target.checked)}
-              ></ha-switch>
-            </ha-formfield>
-
-            <ha-selector
-              .hass=${this.hass}
-              .value=${actionButton.tap_action || { action: 'call-service' }}
-              @value-changed=${(e: any) => this._updateNested('action_button', 'tap_action', e.detail.value)}
-              .selector=${{
-                ui_action: {}
-              }}
-              label="${this._localize('editor.fields.tap_action')}"
-            ></ha-selector>
           ` : ''}
         </div>
 
-        <!-- Cards Section -->
-        <div class="section">
-          <div class="section-header">
-            <ha-icon icon="mdi:card-multiple"></ha-icon>
-            <h3>${this._localize('editor.sections.cards')}</h3>
-          </div>
-
-          <hui-stack-card-editor
-            .hass=${this.hass}
-            .config=${{
-              type: 'vertical-stack',
-              title: '',
-              cards: this._config.cards || []
-            }}
-            @config-changed=${this._handleCardsChanged}
-          ></hui-stack-card-editor>
-        </div>
+        <cards-section
+          .hass=${this.hass}
+          .cards=${this._config.cards || []}
+          @cards-changed=${this._handleCardsChanged}
+        ></cards-section>
       </div>
     `;
   }
@@ -282,7 +205,6 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         display: flex;
         align-items: center;
         gap: 8px;
-        margin-bottom: 4px;
       }
 
       .section-header ha-icon {
@@ -297,18 +219,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         flex: 1;
       }
 
-      .field-hint {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        margin-top: -4px;
-      }
-
-      ha-textfield,
-      ha-icon-picker,
-      ha-select,
-      ha-entity-picker,
-      ha-selector,
-      ha-device-picker {
+      ha-textfield, ha-icon-picker, ha-entity-picker, ha-device-picker {
         width: 100%;
       }
 

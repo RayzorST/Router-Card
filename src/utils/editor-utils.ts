@@ -1,9 +1,6 @@
 // src/utils/editor-utils.ts
 import { loadHaComponents } from '@kipk/load-ha-components';
 
-/**
- * Загружает необходимые компоненты HA для редактора
- */
 export const loadEditorComponents = async (): Promise<void> => {
   const requiredComponents = [
     'ha-icon',
@@ -23,38 +20,9 @@ export const loadEditorComponents = async (): Promise<void> => {
     'ha-button',
     'ha-color-picker',
     'ha-badge',
-    'hui-stack-card-editor',  // Используем готовый редактор стека
     'hui-card-picker',
     'ha-expansion-panel',
   ];
   
   await loadHaComponents(requiredComponents);
-};
-
-/**
- * Создает стандартную карточку для добавления
- */
-export const createDefaultCard = (type: string = 'entities'): any => {
-  switch (type) {
-    case 'entities':
-      return {
-        type: 'entities',
-        entities: []
-      };
-    case 'glance':
-      return {
-        type: 'glance',
-        entities: []
-      };
-    case 'markdown':
-      return {
-        type: 'markdown',
-        content: ''
-      };
-    default:
-      return {
-        type: 'entities',
-        entities: []
-      };
-  }
 };
