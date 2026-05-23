@@ -1,4 +1,4 @@
-// universal-device-card.ts
+// src/universal-device-card.ts
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { HomeAssistant, LovelaceCard, LovelaceCardEditor } from 'custom-card-helpers';
@@ -9,17 +9,33 @@ import { UniversalDeviceCardConfig } from './types/config';
 
 const DEFAULT_ICON = 'mdi:devices';
 
+// Расширяем тип HomeAssistant для поддержки devices
+interface ExtendedHomeAssistant extends HomeAssistant {
+  devices: {
+    [device_id: string]: {
+      name?: string;
+      name_by_user?: string;
+      manufacturer?: string;
+      model?: string;
+      model_id?: string;
+      area_id?: string;
+      [key: string]: any;
+    };
+  };
+}
+
 @customElement('universal-device-card')
 export class UniversalDeviceCard extends LitElement implements LovelaceCard {
-  @property() public hass?: HomeAssistant;
   @state() private config!: UniversalDeviceCardConfig;
   @state() private componentsLoaded = false;
   @state() private childCards: any[] = [];
   @state() private deviceName?: string;
   @state() private deviceModel?: string;
 
+  private _hass?: ExtendedHomeAssistant;
+
   private _localize(key: string, params?: Record<string, string>): string {
-    return getLocalizedStringForHass(this.hass, key, params);
+    return getLocalizedStringForHass(this._hass, key, params);
   }
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
@@ -67,14 +83,29 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     this._createChildCards();
   }
 
+  // Геттер/сеттер для hass
+  @property()
+  public get hass(): ExtendedHomeAssistant | undefined {
+    return this._hass;
+  }
+
+  public set hass(hass: ExtendedHomeAssistant | undefined) {
+    if (hass) {
+      this._hass = hass;
+      this._updateDeviceInfo();
+      this._updateChildCardsHass();
+      this.requestUpdate();
+    }
+  }
+
   private _updateDeviceInfo(): void {
-    if (!this.hass || !this.config.device_id) {
+    if (!this._hass || !this.config.device_id) {
       this.deviceName = undefined;
       this.deviceModel = undefined;
       return;
     }
     
-    const device = this.hass.devices[this.config.device_id];
+    const device = this._hass.devices[this.config.device_id];
     if (device) {
       this.deviceName = device.name_by_user || device.name;
       const modelParts = [device.manufacturer, device.model, device.model_id].filter(Boolean);
@@ -107,8 +138,8 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     for (const cardConfig of this.config.cards) {
       try {
         const element = helpers.createCardElement(cardConfig);
-        if (this.hass) {
-          element.hass = this.hass;
+        if (this._hass) {
+          element.hass = this._hass;
         }
         element.addEventListener('ll-rebuild', () => {
           this._createChildCards();
@@ -221,28 +252,15 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   private _updateChildCardsHass() {
-    if (this.childCards && this.hass) {
+    if (this.childCards && this._hass) {
       this.childCards.forEach(card => {
-        card.hass = this.hass;
+        card.hass = this._hass;
       });
       setTimeout(() => {
         this._styleCards();
       }, 100);
     }
   }
-
-  public set hass(hass: HomeAssistant) {
-    this._hass = hass;
-    this._updateDeviceInfo();
-    this._updateChildCardsHass();
-    this.requestUpdate();
-  }
-
-  public get hass(): HomeAssistant {
-    return this._hass as HomeAssistant;
-  }
-
-  private _hass?: HomeAssistant;
 
   private _handleAction(): void {
     const button = this.config.action_button;
@@ -257,17 +275,17 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     }
     
     const entity = button.entity;
-    if (!entity || !this.hass) return;
+    if (!entity || !this._hass) return;
     
     const domain = entity.split('.')[0];
     
     if (domain === 'button') {
-      this.hass.callService('button', 'press', { entity_id: entity });
+      this._hass.callService('button', 'press', { entity_id: entity });
     } else if (domain === 'script') {
-      this.hass.callService('script', 'turn_on', { entity_id: entity });
+      this._hass.callService('script', 'turn_on', { entity_id: entity });
     } else {
       const [serviceDomain, serviceName] = entity.split('.');
-      this.hass.callService(serviceDomain, serviceName, button.service_data || {});
+      this._hass.callService(serviceDomain, serviceName, button.service_data || {});
     }
   }
 
@@ -285,7 +303,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   private _handleTap(action?: any, entityId?: string): void {
-    if (!this.hass) return;
+    if (!this._hass) return;
     
     if (!action || action.action === 'none') {
       if (entityId) {
@@ -316,18 +334,18 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
       case 'call-service':
         if (action.service) {
           const [domain, service] = action.service.split('.');
-          this.hass.callService(domain, service, action.service_data || {});
+          this._hass.callService(domain, service, action.service_data || {});
         }
         break;
       case 'toggle':
-        if (entityId) this.hass.callService('homeassistant', 'toggle', { entity_id: entityId });
+        if (entityId) this._hass.callService('homeassistant', 'toggle', { entity_id: entityId });
         break;
     }
   }
 
   private _checkUpdateAvailable(entityId: string): boolean {
-    if (!this.hass || !entityId || !this.hass.states[entityId]) return false;
-    const state = this.hass.states[entityId];
+    if (!this._hass || !entityId || !this._hass.states[entityId]) return false;
+    const state = this._hass.states[entityId];
     const domain = entityId.split('.')[0];
     if (domain === 'update') return state.state === 'on' || state.state === 'available';
     if (domain === 'binary_sensor') return state.state === 'on';
@@ -339,8 +357,8 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
       return this.config.name;
     }
     
-    if (this.config.device_id && this.hass?.devices[this.config.device_id]) {
-      const device = this.hass.devices[this.config.device_id];
+    if (this.config.device_id && this._hass?.devices[this.config.device_id]) {
+      const device = this._hass.devices[this.config.device_id];
       const model = device.model;
       if (model) {
         return model;
@@ -352,15 +370,15 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   private _getManufacturer(): string {
-    if (this.config.device_id && this.hass?.devices[this.config.device_id]) {
-      const device = this.hass.devices[this.config.device_id];
+    if (this.config.device_id && this._hass?.devices[this.config.device_id]) {
+      const device = this._hass.devices[this.config.device_id];
       return device.manufacturer || '';
     }
     return '';
   }
 
   protected render() {
-    if (!this.config || !this.hass || !this.componentsLoaded) {
+    if (!this.config || !this._hass || !this.componentsLoaded) {
       return html`<ha-card><div class="loading">Loading...</div></ha-card>`;
     }
     
