@@ -39,7 +39,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
 
   // ВАЖНО: возвращаем getConfigElement для кастомного редактора
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
-    await import('./editor/universal-device-card-editor');
+    await import('./universal-device-card-editor');
     return document.createElement('universal-device-card-editor');
   }
 
