@@ -23,7 +23,9 @@ export const loadEditorComponents = async (): Promise<void> => {
     'ha-button',
     'ha-color-picker',
     'ha-badge',
+    'hui-stack-card-editor',  // Используем готовый редактор стека
     'hui-card-picker',
+    'ha-expansion-panel',
   ];
   
   await loadHaComponents(requiredComponents);
