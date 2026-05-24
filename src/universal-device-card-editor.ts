@@ -22,14 +22,6 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   private _hass?: HomeAssistant;
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
-    const stackCard = document.createElement('hui-vertical-stack-card');
-    if (
-      'getConfigElement' in stackCard.constructor &&
-      typeof (stackCard.constructor as any).getConfigElement === 'function'
-    ) {
-      (stackCard.constructor as any).getConfigElement();
-    }
-
     return document.createElement('universal-device-card-editor') as unknown as LovelaceCardEditor;
   }
 

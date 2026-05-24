@@ -1,7 +1,5 @@
-// src/types/config.ts
-
 export interface BadgeConfig {
-  type: 'entity' | 'update' | 'action' | 'template';
+  type: 'action' | 'update' | '';
   icon?: string;
   label?: string;
   entity_id?: string;
@@ -12,36 +10,17 @@ export interface BadgeConfig {
     service?: string;
     service_data?: Record<string, any>;
   };
-  template?: string;
   show_when?: {
-    entity_id?: string;
-    state?: string;
+    entity_id: string;
+    state: string;
   };
 }
 
 export interface UniversalDeviceCardConfig {
   type: string;
-  name?: string;
-  icon?: string;
-  device_id?: string;
-  badges?: BadgeConfig[];
-  cards?: any[];
-  chips?: BadgeConfig[]; // Для обратной совместимости
-  update_section?: {
-    enabled?: boolean;
-    entity?: string;
-    label?: string;
-    tap_action?: any;
-  };
-  action_button?: {
-    enabled?: boolean;
-    entity?: string;
-    confirmation?: boolean;
-    icon?: string;
-    label?: string;
-    tap_action?: any;
-    service_data?: Record<string, any>;
-  };
-  controller?: any;
-  reboot_button?: any;
+  name: string;
+  icon: string;
+  device_id: string;
+  badges: BadgeConfig[];
+  cards: any[];
 }
