@@ -19,9 +19,9 @@ const BADGE_TYPES = [
 ] as const;
 
 const TABS = [
-  { id: 'settings', label: 'Settings', icon: 'mdi:cog-outline' },
-  { id: 'badges', label: 'Badges', icon: 'mdi:badge-account' },
-  { id: 'cards', label: 'Cards', icon: 'mdi:card-multiple-outline' },
+  { id: 'settings', label: 'Settings' },
+  { id: 'badges', label: 'Badges' },
+  { id: 'cards', label: 'Cards' },
 ] as const;
 
 @customElement('universal-device-card-editor')
@@ -241,8 +241,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
     const deviceName = this._getDeviceName();
 
     return html`
-      <div class="tab-content">
-        <!-- ✅ Поле имени карточки — САМОЕ ПЕРВОЕ -->
+      <div class="tab-content"> 
         <ha-textfield
           .label=${this._t('editor.card_name')}
           .placeholder=${deviceName || this._t('editor.card_name_placeholder')}
@@ -317,7 +316,6 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
                 .active=${this._selectedTab === tab.id}
               >
                 <div class="tab-label">
-                  <ha-icon icon="${tab.icon}"></ha-icon>
                   ${this._t(`editor.tabs.${tab.id}`) || tab.label}
                 </div>
               </ha-tab-group-tab>

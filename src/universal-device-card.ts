@@ -1,4 +1,3 @@
-// src/universal-device-card.ts
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { HomeAssistant } from './hass/types';
@@ -7,15 +6,15 @@ import type { BadgeConfig, UniversalDeviceCardConfig } from './types/config';
 import { loadHaComponents } from '@kipk/load-ha-components';
 import { getLocalizedStringForHass } from './localization';
 import { loadCardHelpers } from './utils/editor-utils';
+import type { HuiStackCard } from '@hass/panels/lovelace/cards/hui-stack-card';
 
-// Сайд-эффект импорт для регистрации редактора
 import './universal-device-card-editor';
 
 const DEFAULT_ICON = 'mdi:devices';
 
 @customElement('universal-device-card')
 export class UniversalDeviceCard extends LitElement implements LovelaceCard {
-  @state() private _config!: UniversalDeviceCardConfig;
+  @state() private config!: UniversalDeviceCardConfig;
   @state() private _componentsLoaded = false;
   @state() private _childCards: LovelaceCard[] = [];
   @state() private _deviceName?: string;
@@ -24,7 +23,6 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   private _hass?: HomeAssistant;
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
-    // Триггерим ленивую загрузку редактора стека из HA (как в go-hass-cards)
     const stackCard = document.createElement('hui-vertical-stack-card');
     if (
       'getConfigElement' in stackCard.constructor &&
@@ -48,7 +46,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   public setConfig(config: UniversalDeviceCardConfig): void {
-    this._config = this._migrateConfig(config);
+    this.config = this._migrateConfig(config);
     this._updateDeviceInfo();
     this._loadComponents();
   }
@@ -61,6 +59,13 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
 
   get hass(): HomeAssistant | undefined {
     return this._hass;
+  }
+
+  protected firstUpdated() {
+    if (this.config?.cards) {
+      const topCardsElement = this.shadowRoot?.querySelector('.cards') as HuiStackCard;
+      topCardsElement?.setConfig({ cards: this.config.cards, type: 'vertical-stack' });
+    }
   }
 
   private _migrateConfig(config: any): UniversalDeviceCardConfig {
@@ -115,13 +120,13 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   private _updateDeviceInfo(): void {
-    if (!this._hass || !this._config.device_id) {
+    if (!this._hass || !this.config.device_id) {
       this._deviceName = undefined;
       this._deviceModel = undefined;
       return;
     }
 
-    const device = this._hass.devices[this._config.device_id];
+    const device = this._hass.devices[this.config.device_id];
     if (device) {
       this._deviceName = device.name_by_user || device.name || undefined;
       const modelParts = [device.manufacturer, device.model, device.model_id].filter(Boolean);
@@ -133,12 +138,12 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   private _getDisplayName(): string {
-    if (this._config.name?.trim()) {
-      return this._config.name;
+    if (this.config.name?.trim()) {
+      return this.config.name;
     }
 
-    if (this._config.device_id && this._hass?.devices[this._config.device_id]) {
-      const device = this._hass.devices[this._config.device_id];
+    if (this.config.device_id && this._hass?.devices[this.config.device_id]) {
+      const device = this._hass.devices[this.config.device_id];
       return device.model || device.name_by_user || device.name || this._t('common.device');
     }
 
@@ -146,8 +151,8 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   private _getManufacturer(): string {
-    if (this._config.device_id && this._hass?.devices[this._config.device_id]) {
-      return this._hass.devices[this._config.device_id].manufacturer || '';
+    if (this.config.device_id && this._hass?.devices[this.config.device_id]) {
+      return this._hass.devices[this.config.device_id].manufacturer || '';
     }
     return '';
   }
@@ -163,7 +168,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   private async _createChildCards(): Promise<void> {
-    if (!this._config.cards?.length) {
+    if (!this.config.cards?.length) {
       this._childCards = [];
       this.requestUpdate();
       return;
@@ -173,7 +178,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
       const helpers = await loadCardHelpers();
       const cards: LovelaceCard[] = [];
 
-      for (const cardConfig of this._config.cards) {
+      for (const cardConfig of this.config.cards) {
         try {
           const element = helpers.createCardElement(cardConfig) as LovelaceCard;
           if (this._hass) {
@@ -347,7 +352,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   private _renderBadges() {
-    const badges = this._config.badges || [];
+    const badges = this.config.badges || [];
     if (!badges.length) return nothing;
 
     return html`
@@ -374,11 +379,11 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   protected render() {
-    if (!this._config || !this._hass || !this._componentsLoaded) {
+    if (!this.config || !this._hass || !this._componentsLoaded) {
       return html`<ha-card><div class="loading">Loading...</div></ha-card>`;
     }
 
-    const icon = this._config.icon || DEFAULT_ICON;
+    const icon = this.config.icon || DEFAULT_ICON;
     const displayName = this._getDisplayName();
     const manufacturer = this._getManufacturer();
 
@@ -576,16 +581,16 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   public getCardSize(): number {
-    let size = 1;
-    for (const card of this._childCards) {
-      if (typeof card.getCardSize === 'function') {
-        const result = card.getCardSize();
-        size += typeof result === 'number' ? result : 1;
-      } else {
-        size += 1;
-      }
-    }
-    return size;
+    return 3;
+  }
+
+  getGridOptions() {
+    return {
+      rows: 3,
+      columns: 6,
+      min_rows: 3,
+      max_rows: 3,
+    };
   }
 }
 
