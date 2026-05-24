@@ -1,57 +1,68 @@
 import { LitElement, html, css, nothing } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { fireEvent } from 'custom-card-helpers';
-import type { UniversalDeviceCardConfig, BadgeConfig } from './types/config';
-import { getLocalizedStringForHass } from './localization';
+import { customElement, state } from 'lit/decorators.js';
 import type { HomeAssistant } from '@hass/types';
-import type { LovelaceCardEditor } from '@hass/panels/lovelace/types';
+import type { LovelaceCard, LovelaceCardEditor } from '@hass/panels/lovelace/types';
+import type { BadgeConfig, UniversalDeviceCardConfig } from './types/config';
+import { loadHaComponents } from '@kipk/load-ha-components';
+import { getLocalizedStringForHass } from './localization';
+import { loadCardHelpers } from './utils/editor-utils';
 
-const BADGE_TYPES = [
-  { value: 'entity', label_key: 'editor.badge_types.entity' },
-  { value: 'update', label_key: 'editor.badge_types.update' },
-  { value: 'action', label_key: 'editor.badge_types.action' },
-  { value: 'template', label_key: 'editor.badge_types.template' },
-] as const;
+import './universal-device-card-editor';
 
-const TABS = [
-  { id: 'settings', label: 'Settings', icon: 'mdi:cog-outline' },
-  { id: 'badges', label: 'Badges', icon: 'mdi:badge-account' },
-  { id: 'cards', label: 'Cards', icon: 'mdi:card-multiple-outline' },
-] as const;
+const DEFAULT_ICON = 'mdi:devices';
 
-@customElement('universal-device-card-editor')
-export class UniversalDeviceCardEditor extends LitElement implements LovelaceCardEditor {
-  @property({ attribute: false }) public hass!: HomeAssistant;
-  @property({ attribute: false }) public lovelace?: any;
+@customElement('universal-device-card')
+export class UniversalDeviceCard extends LitElement implements LovelaceCard {
+  @state() private config!: UniversalDeviceCardConfig;
+  @state() private _componentsLoaded = false;
+  @state() private childCards: LovelaceCard[] = [];
+  @state() private _deviceName?: string;
+  @state() private _deviceModel?: string;
 
-  @state() private _config!: UniversalDeviceCardConfig;
-  @state() private _selectedTab: string = TABS[0].id;
-  @state() private _helpExpanded: boolean = false;
+  private _hass?: HomeAssistant;
 
-  private _t(key: string, params?: Record<string, string>): string {
-    if (!this.hass) {
-      const parts = key.split('.');
-      return parts[parts.length - 1]
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+  public static async getConfigElement(): Promise<LovelaceCardEditor> {
+    const stackCard = document.createElement('hui-vertical-stack-card');
+    if (
+      'getConfigElement' in stackCard.constructor &&
+      typeof (stackCard.constructor as any).getConfigElement === 'function'
+    ) {
+      (stackCard.constructor as any).getConfigElement();
     }
-    return getLocalizedStringForHass(this.hass, key, params);
+
+    return document.createElement('universal-device-card-editor') as unknown as LovelaceCardEditor;
+  }
+
+  public static getStubConfig(): UniversalDeviceCardConfig {
+    return {
+      type: 'custom:universal-device-card',
+      name: '',
+      icon: DEFAULT_ICON,
+      device_id: '',
+      badges: [],
+      cards: [],
+    };
   }
 
   public setConfig(config: UniversalDeviceCardConfig): void {
-    const migrated = this._migrateConfig(config);
-    this._config = {
-      type: migrated.type,
-      name: migrated.name || '',
-      icon: migrated.icon || 'mdi:devices',
-      device_id: migrated.device_id || '',
-      badges: migrated.badges || [],
-      cards: migrated.cards || [],
-    };
+    this.config = this._migrateConfig(config);
+    this._updateDeviceInfo();
+    this._loadComponents();
+  }
+
+  set hass(hass: HomeAssistant) {
+    this._hass = hass;
+    this._updateDeviceInfo();
+    this._updateChildCardsHass();
+  }
+
+  get hass(): HomeAssistant | undefined {
+    return this._hass;
   }
 
   private _migrateConfig(config: any): UniversalDeviceCardConfig {
     const migrated = { ...config };
+
     delete migrated.controller;
     delete migrated.reboot_button;
 
@@ -86,382 +97,462 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
     delete migrated.update_section;
     delete migrated.action_button;
 
-    return migrated;
+    return {
+      type: migrated.type,
+      name: migrated.name || '',
+      icon: migrated.icon || DEFAULT_ICON,
+      device_id: migrated.device_id || '',
+      badges: migrated.badges || [],
+      cards: migrated.cards || [],
+    };
   }
 
-  private _updateConfig(changes: Partial<UniversalDeviceCardConfig>): void {
-    const newConfig = { ...this._config, ...changes };
-    this._config = newConfig;
-    fireEvent(this, 'config-changed', { config: newConfig });
+  private _t(key: string, params?: Record<string, string>): string {
+    return getLocalizedStringForHass(this._hass, key, params);
   }
 
-  private _handleCardsChanged(ev: CustomEvent): void {
-    ev.stopPropagation();
-    if (ev.detail.config?.cards) {
-      this._updateConfig({ cards: ev.detail.config.cards });
+  private _updateDeviceInfo(): void {
+    if (!this._hass || !this.config.device_id) {
+      this._deviceName = undefined;
+      this._deviceModel = undefined;
+      return;
+    }
+
+    const device = this._hass.devices[this.config.device_id];
+    if (device) {
+      this._deviceName = device.name_by_user || device.name || undefined;
+      const modelParts = [device.manufacturer, device.model, device.model_id].filter(Boolean);
+      this._deviceModel = modelParts.join(' ') || undefined;
+    } else {
+      this._deviceName = undefined;
+      this._deviceModel = undefined;
     }
   }
 
-  private _handleTabSelected(ev: CustomEvent): void {
-    const tabId = ev.detail.name;
-    if (TABS.some((t) => t.id === tabId)) {
-      this._selectedTab = tabId;
+  private _getDisplayName(): string {
+    if (this.config.name?.trim()) {
+      return this.config.name;
+    }
+
+    if (this.config.device_id && this._hass?.devices[this.config.device_id]) {
+      const device = this._hass.devices[this.config.device_id];
+      return device.model || device.name_by_user || device.name || this._t('common.device');
+    }
+
+    return this._t('common.device');
+  }
+
+  private _getManufacturer(): string {
+    if (this.config.device_id && this._hass?.devices[this.config.device_id]) {
+      return this._hass.devices[this.config.device_id].manufacturer || '';
+    }
+    return '';
+  }
+
+  private async _loadComponents(): Promise<void> {
+    try {
+      await loadHaComponents();
+      this._componentsLoaded = true;
+      await this._createChildCards();
+    } catch (e) {
+      console.warn('Failed to load HA components:', e);
     }
   }
 
-  protected updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has('_selectedTab') && this._selectedTab === 'cards') {
-      requestAnimationFrame(() => {
-        const stackEditor = this.shadowRoot?.querySelector('hui-stack-card-editor');
-        if (stackEditor && typeof (stackEditor as any).requestUpdate === 'function') {
-          (stackEditor as any).requestUpdate();
+  private async _createChildCards(): Promise<void> {
+    if (!this.config.cards?.length) {
+      this.childCards = [];
+      this.requestUpdate();
+      return;
+    }
+
+    try {
+      const helpers = await loadCardHelpers();
+      const cards: LovelaceCard[] = [];
+
+      for (const cardConfig of this.config.cards) {
+        try {
+          const element = helpers.createCardElement(cardConfig) as LovelaceCard;
+          if (this._hass) {
+            element.hass = this._hass;
+          }
+
+          element.addEventListener('ll-rebuild', () => {
+            this._createChildCards();
+          });
+
+          cards.push(element);
+        } catch (e) {
+          console.error('Failed to create card:', cardConfig, e);
         }
-      });
+      }
+
+      this.childCards = cards;
+      this.requestUpdate();
+      await this.updateComplete;
+    } catch (e) {
+      console.error('Failed to load card helpers:', e);
+      this.childCards = [];
     }
   }
 
-  private _addBadge(): void {
-    const badges = [...(this._config.badges || [])];
-    badges.push({
-      type: 'entity',
-      icon: 'mdi:badge-account',
-      label: '',
-      entity_id: '',
-      tap_action: { action: 'more-info' },
-    });
-    this._updateConfig({ badges });
+  private _updateChildCardsHass(): void {
+    if (this.childCards && this._hass) {
+      for (const card of this.childCards) {
+        card.hass = this._hass;
+      }
+    }
   }
 
-  private _removeBadge(index: number): void {
-    const badges = [...(this._config.badges || [])];
-    badges.splice(index, 1);
-    this._updateConfig({ badges });
+  private _shouldShowBadge(badge: BadgeConfig): boolean {
+    if (!badge.show_when?.entity_id || !this._hass) return true;
+
+    const state = this._hass.states[badge.show_when.entity_id];
+    if (!state) return false;
+
+    if (badge.show_when.state !== undefined && badge.show_when.state !== '') {
+      return state.state === badge.show_when.state;
+    }
+
+    return true;
   }
 
-  private _updateBadge(index: number, changes: Partial<BadgeConfig>): void {
-    const badges = [...(this._config.badges || [])];
-    badges[index] = { ...badges[index], ...changes };
-    this._updateConfig({ badges });
+  private _isUpdateAvailable(entityId: string): boolean {
+    if (!this._hass || !entityId) return false;
+    const state = this._hass.states[entityId];
+    if (!state) return false;
+    return state.state === 'on';
   }
 
-  private _getDeviceName(): string {
-    if (!this.hass || !this._config?.device_id) return '';
-    const device = this.hass.devices?.[this._config.device_id];
-    if (!device) return '';
-    return device.name_by_user || device.name || '';
+  private _handleBadgeClick(badge: BadgeConfig): void {
+    if (!this._hass) return;
+
+    const action = badge.tap_action;
+    if (!action || action.action === 'none') return;
+
+    switch (action.action) {
+      case 'more-info':
+        if (badge.entity_id) {
+          this.dispatchEvent(
+            new CustomEvent('hass-more-info', {
+              bubbles: true,
+              composed: true,
+              detail: { entityId: badge.entity_id },
+            })
+          );
+        }
+        break;
+
+      case 'navigate':
+        if (action.navigation_path) {
+          history.pushState(null, '', action.navigation_path);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        }
+        break;
+
+      case 'url':
+        if (action.url_path) {
+          window.open(action.url_path, '_blank');
+        }
+        break;
+
+      case 'call-service':
+        if (action.service) {
+          const [domain, service] = action.service.split('.');
+          this._hass.callService(domain, service, action.service_data || {});
+        } else if (badge.entity_id) {
+          const domain = badge.entity_id.split('.')[0];
+          if (domain === 'button') {
+            this._hass.callService('button', 'press', { entity_id: badge.entity_id });
+          } else if (domain === 'script') {
+            this._hass.callService('script', 'turn_on', { entity_id: badge.entity_id });
+          } else if (domain === 'switch' || domain === 'light' || domain === 'input_boolean') {
+            this._hass.callService('homeassistant', 'toggle', { entity_id: badge.entity_id });
+          }
+        }
+        break;
+    }
   }
 
-  private _renderSettingsTab() {
-    const deviceName = this._getDeviceName();
-    const hasCustomName = this._config.name && this._config.name.trim() !== '';
+  private _renderBadges() {
+    const badges = this.config.badges || [];
+    if (!badges.length) return nothing;
 
     return html`
-      <div class="tab-content">
-        <!-- Название карточки -->
-        <div class="field">
-          <ha-textfield
-            .label=${this._t('editor.card_name') || 'Card name (optional)'}
-            .placeholder=${deviceName || 'Device name'}
-            .value=${this._config.name || ''}
-            @change=${(e: Event) => this._updateConfig({ name: (e.target as HTMLInputElement).value })}
-          ></ha-textfield>
-          ${!hasCustomName && deviceName
-            ? html`<div class="field-hint">${this._t('editor.card_name_hint', { name: deviceName }) || `Will display as "${deviceName}"`}</div>`
-            : nothing}
-        </div>
+      <div class="badges">
+        ${badges.map((badge) => {
+          if (!this._shouldShowBadge(badge)) return nothing;
 
-        <!-- Выбор устройства -->
-        <div class="field">
-          <ha-device-picker
-            .hass=${this.hass}
-            .value=${this._config.device_id || ''}
-            @value-changed=${(e: CustomEvent) => this._updateConfig({ device_id: e.detail.value })}
-          ></ha-device-picker>
-        </div>
+          if (badge.type === 'update' && badge.entity_id) {
+            if (!this._isUpdateAvailable(badge.entity_id)) return nothing;
+          }
 
-        <!-- Иконка -->
-        <div class="field">
-          <ha-icon-picker
-            .hass=${this.hass}
-            .label=${this._t('editor.icon') || 'Icon'}
-            .value=${this._config.icon || 'mdi:devices'}
-            @value-changed=${(e: CustomEvent) => this._updateConfig({ icon: e.detail.value })}
-          ></ha-icon-picker>
-        </div>
+          const badgeClass =
+            badge.type === 'update' ? 'update' : badge.type === 'action' ? 'action' : '';
+
+          return html`
+            <div class="badge ${badgeClass}" @click=${() => this._handleBadgeClick(badge)}>
+              ${badge.icon ? html`<ha-icon .icon=${badge.icon}></ha-icon>` : nothing}
+              ${badge.label ? html`<span>${badge.label}</span>` : nothing}
+            </div>
+          `;
+        })}
       </div>
     `;
   }
 
-  private _renderBadgeEditor(badge: BadgeConfig, index: number) {
-    const badgeTypes = BADGE_TYPES.map((t) => ({
-      value: t.value,
-      label: this._t(t.label_key) || t.value,
-    }));
+  protected render() {
+    if (!this.config || !this._hass || !this._componentsLoaded) {
+      return html`<ha-card><div class="loading">Loading...</div></ha-card>`;
+    }
+
+    const icon = this.config.icon || DEFAULT_ICON;
+    const displayName = this._getDisplayName();
+    const manufacturer = this._getManufacturer();
 
     return html`
-      <div class="badge-item">
-        <div class="badge-item-header">
-          <ha-icon .icon=${badge.icon || 'mdi:badge-account'}></ha-icon>
-          <span>${this._t('editor.badge') || 'Badge'} ${index + 1}</span>
-          <ha-icon-button 
-            .label=${this._t('common.remove') || 'Remove'} 
-            @click=${() => this._removeBadge(index)}
-          >
-            <ha-icon icon="mdi:close"></ha-icon>
-          </ha-icon-button>
-        </div>
-
-        <ha-selector
-          .hass=${this.hass}
-          .label=${this._t('editor.badge_type') || 'Type'}
-          .value=${badge.type}
-          .selector=${{ select: { options: badgeTypes } }}
-          @value-changed=${(e: CustomEvent) => this._updateBadge(index, { type: e.detail.value })}
-        ></ha-selector>
-
-        <ha-textfield
-          .label=${this._t('editor.badge_label') || 'Label'}
-          .value=${badge.label || ''}
-          @change=${(e: Event) => this._updateBadge(index, { label: (e.target as HTMLInputElement).value })}
-        ></ha-textfield>
-
-        <ha-icon-picker
-          .hass=${this.hass}
-          .label=${this._t('editor.badge_icon') || 'Icon'}
-          .value=${badge.icon || ''}
-          @value-changed=${(e: CustomEvent) => this._updateBadge(index, { icon: e.detail.value })}
-        ></ha-icon-picker>
-
-        ${badge.type !== 'template'
-          ? html`
-              <ha-entity-picker
-                .hass=${this.hass}
-                .label=${this._t('editor.badge_entity') || 'Entity'}
-                .value=${badge.entity_id || ''}
-                @value-changed=${(e: CustomEvent) => this._updateBadge(index, { entity_id: e.detail.value })}
-              ></ha-entity-picker>
-            `
-          : html`
-              <ha-textfield
-                .label=${this._t('editor.badge_template') || 'Template'}
-                .value=${badge.template || ''}
-                @change=${(e: Event) => this._updateBadge(index, { template: (e.target as HTMLInputElement).value })}
-              ></ha-textfield>
-            `}
-
-        <ha-expansion-panel .header=${this._t('editor.badge_visibility') || 'Visibility conditions'}>
-          <div class="visibility-fields">
-            <ha-entity-picker
-              .hass=${this.hass}
-              .label=${this._t('editor.badge_show_when_entity') || 'Entity'}
-              .value=${badge.show_when?.entity_id || ''}
-              @value-changed=${(e: CustomEvent) =>
-                this._updateBadge(index, { show_when: { ...badge.show_when, entity_id: e.detail.value } })}
-            ></ha-entity-picker>
-            <ha-textfield
-              .label=${this._t('editor.badge_show_when_state') || 'State'}
-              .value=${badge.show_when?.state || ''}
-              @change=${(e: Event) =>
-                this._updateBadge(index, { show_when: { ...badge.show_when, state: (e.target as HTMLInputElement).value } })}
-            ></ha-textfield>
+      <ha-card class="device-card">
+        <div class="header">
+          <div class="header-content">
+            <div class="header-left">
+              <ha-icon .icon=${icon}></ha-icon>
+              <div class="title-container">
+                <div class="title">${displayName}</div>
+                ${manufacturer ? html`<div class="manufacturer">${manufacturer}</div>` : nothing}
+              </div>
+            </div>
+            <div class="header-right">
+              ${this._renderBadges()}
+            </div>
           </div>
-        </ha-expansion-panel>
-      </div>
-    `;
-  }
-
-  private _renderBadgesTab() {
-    const badges = this._config.badges || [];
-
-    return html`
-      <div class="tab-content">
-        <div class="tab-header">
-          <ha-button @click=${this._addBadge}>
-            <ha-icon icon="mdi:plus" slot="icon"></ha-icon>
-            ${this._t('editor.add_badge') || 'Add Badge'}
-          </ha-button>
         </div>
-        ${badges.length === 0
-          ? html`<div class="empty-state">${this._t('editor.no_badges') || 'No badges configured. Click "Add Badge" to create one.'}</div>`
-          : badges.map((badge, i) => this._renderBadgeEditor(badge, i))}
-      </div>
-    `;
-  }
 
-  private _renderCardsTab() {
-    return html`
-      <div class="tab-content">
-        <hui-stack-card-editor
-          key="stack-editor-${this._selectedTab === 'cards' ? 'visible' : 'hidden'}"
-          .hass=${this.hass}
-          .lovelace=${this.lovelace}
-          ._config=${{ cards: this._config.cards || [] }}
-          @config-changed=${this._handleCardsChanged}
-        ></hui-stack-card-editor>
-      </div>
-    `;
-  }
-
-  render() {
-    if (!this._config) {
-      return html`<div class="loading">${this._t('editor.loading') || 'Loading...'}</div>`;
-    }
-
-    return html`
-      <div class="editor">
-        <!-- ★★★ ТАБЫ КАК В ПРИМЕРЕ ★★★ -->
-        <ha-tab-group @ha-tab-change=${this._handleTabSelected}>
-          ${TABS.map(
-            (tab) => html`
-              <ha-tab
-                slot="nav"
-                .id=${tab.id}
-                .selected=${this._selectedTab === tab.id}
-              >
-                <div class="tab-label">
-                  <ha-icon icon="${tab.icon}"></ha-icon>
-                  <span>${this._t(`editor.tabs.${tab.id}`) || tab.label}</span>
-                </div>
-              </ha-tab>
-              
-              <div slot="panels" ?hidden=${this._selectedTab !== tab.id}>
-                ${tab.id === 'settings' ? this._renderSettingsTab() : nothing}
-                ${tab.id === 'badges' ? this._renderBadgesTab() : nothing}
-                ${tab.id === 'cards' ? this._renderCardsTab() : nothing}
+        ${this.childCards.length > 0
+          ? html`
+              <div class="cards-container">
+                ${this.childCards.map((card) => html`${card}`)}
               </div>
             `
-          )}
-        </ha-tab-group>
-      </div>
+          : nothing}
+      </ha-card>
     `;
   }
 
   static get styles() {
     return css`
-      .editor {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
+      :host {
+        display: block;
+      }
+
+      ha-card {
+        background: var(--card-background-color, #ffffff);
+        border-radius: 12px;
+        box-shadow: var(--ha-card-box-shadow, 0 2px 4px rgba(0, 0, 0, 0.1));
+        overflow: hidden;
       }
 
       .loading {
-        padding: 16px;
+        padding: 20px;
         text-align: center;
         color: var(--secondary-text-color);
       }
 
-      /* Стили для табов как в go-area-card */
-      ha-tab-group {
-        --ha-tab-group-tab-flex: 1;
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-      }
-
-      ha-tab-group > [slot="nav"] {
-        display: flex;
-        border-bottom: 1px solid var(--divider-color);
-      }
-
-      ha-tab {
-        flex: 1;
-        min-width: 0;
-        --mdc-tab-text-label-color-default: var(--secondary-text-color);
-      }
-
-      ha-tab[selected] {
-        --mdc-tab-text-label-color-default: var(--primary-color);
-      }
-
-      .tab-label {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        width: 100%;
-      }
-
-      .tab-label ha-icon {
-        --mdc-icon-size: 20px;
-      }
-
-      .tab-content {
-        padding: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-
-      .tab-header {
-        display: flex;
-        justify-content: flex-end;
-      }
-
-      .field {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-
-      .field-hint {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        font-style: italic;
-        padding: 0 8px;
-      }
-
-      .empty-state {
-        text-align: center;
-        padding: 24px;
-        color: var(--secondary-text-color);
-        font-style: italic;
-      }
-
-      .badge-item {
-        border: 1px solid var(--divider-color, #e0e0e0);
-        border-radius: 12px;
-        padding: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        background: var(--card-background-color);
-      }
-
-      .badge-item-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 14px;
-        font-weight: 500;
-        padding-bottom: 4px;
+      .header {
+        padding: 12px 16px;
         border-bottom: 1px solid var(--divider-color, #e0e0e0);
       }
 
-      .badge-item-header ha-icon-button {
-        margin-left: auto;
-        color: var(--secondary-text-color);
+      .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
       }
 
-      .visibility-fields {
+      .header-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+        flex: 1;
+      }
+
+      .header-left ha-icon {
+        --mdc-icon-size: 24px;
+        color: var(--state-icon-color, #03a9f4);
+        flex-shrink: 0;
+      }
+
+      .title-container {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .title {
+        font-size: 16px;
+        font-weight: 500;
+        line-height: 1.3;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .manufacturer {
+        font-size: 11px;
+        color: var(--secondary-text-color, #666);
+        line-height: 1.3;
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .header-right {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+      }
+
+      .badges {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .badge {
+        cursor: pointer;
+        transition: all 0.2s;
+        padding: 4px 10px;
+        border-radius: 16px;
+        font-size: 12px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+        background: var(--secondary-background-color, #f0f0f0);
+        color: var(--secondary-text-color, #666);
+        user-select: none;
+      }
+
+      .badge:hover {
+        filter: brightness(0.95);
+      }
+
+      .badge:active {
+        transform: scale(0.97);
+      }
+
+      .badge ha-icon {
+        --mdc-icon-size: 14px;
+      }
+
+      .badge.update {
+        background: var(--warning-color, #ff9800);
+        color: #fff;
+      }
+
+      .badge.action {
+        background: var(--primary-color, #03a9f4);
+        color: #fff;
+      }
+
+      .cards-container {
+        padding: 12px 16px;
         display: flex;
         flex-direction: column;
         gap: 12px;
-        padding-top: 8px;
       }
 
-      ha-textfield,
-      ha-selector,
-      ha-entity-picker,
-      ha-icon-picker {
-        display: block;
-        width: 100%;
+      .cards-container > *,
+      .cards-container ha-card,
+      .cards-container [class*="card"] {
+        background: var(--secondary-background-color, #f5f5f5) !important;
+        border-radius: 8px !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+      }
+
+      .cards-container ha-card ha-card,
+      .cards-container .card-content,
+      .cards-container .content {
+        background: transparent !important;
+        border-radius: 8px !important;
+      }
+
+      .cards-container hui-vertical-stack-card,
+      .cards-container hui-horizontal-stack-card,
+      .cards-container hui-grid-card {
+        background: transparent !important;
+        gap: 12px;
+      }
+
+      .cards-container .card {
+        background: var(--secondary-background-color, #f5f5f5) !important;
+        border-radius: 8px !important;
+        overflow: hidden;
+      }
+
+      @media (max-width: 600px) {
+        .header {
+          padding: 10px 12px;
+        }
+
+        .header-left {
+          gap: 10px;
+        }
+
+        .header-left ha-icon {
+          --mdc-icon-size: 20px;
+        }
+
+        .title {
+          font-size: 14px;
+        }
+
+        .manufacturer {
+          font-size: 10px;
+        }
+
+        .cards-container {
+          padding: 8px 12px;
+          gap: 8px;
+        }
+
+        .badge {
+          padding: 3px 8px;
+          font-size: 11px;
+        }
+
+        .badge ha-icon {
+          --mdc-icon-size: 12px;
+        }
       }
     `;
+  }
+
+  public async getCardSize(): Promise<number> {
+    let size = 1;
+    
+    if (this.childCards) {
+      for (const card of this.childCards) {
+        if (typeof card.getCardSize === 'function') {
+          const cardSize = await card.getCardSize();
+          size += cardSize;
+        } else {
+          size += 1;
+        }
+      }
+    }
+    
+    return size;
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
-    'universal-device-card-editor': UniversalDeviceCardEditor;
+    'universal-device-card': UniversalDeviceCard;
   }
 }

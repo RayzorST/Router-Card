@@ -5,6 +5,7 @@ import type { LovelaceCard, LovelaceCardEditor } from './hass/panels/lovelace/ty
 import type { BadgeConfig, UniversalDeviceCardConfig } from './types/config';
 import { loadHaComponents } from '@kipk/load-ha-components';
 import { getLocalizedStringForHass } from './localization';
+import { loadCardHelpers } from './utils/editor-utils';
 import type { HuiStackCard } from '@hass/panels/lovelace/cards/hui-stack-card';
 
 import './universal-device-card-editor';
@@ -14,14 +15,21 @@ const DEFAULT_ICON = 'mdi:devices';
 @customElement('universal-device-card')
 export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   @state() private config!: UniversalDeviceCardConfig;
-  @state() private _componentsLoaded = false;
+  @state() private childCards: LovelaceCard[] = [];
   @state() private _deviceName?: string;
   @state() private _deviceModel?: string;
-  @state() private _stackCard: HuiStackCard | null = null;
 
   private _hass?: HomeAssistant;
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
+    const stackCard = document.createElement('hui-vertical-stack-card');
+    if (
+      'getConfigElement' in stackCard.constructor &&
+      typeof (stackCard.constructor as any).getConfigElement === 'function'
+    ) {
+      (stackCard.constructor as any).getConfigElement();
+    }
+
     return document.createElement('universal-device-card-editor') as unknown as LovelaceCardEditor;
   }
 
@@ -39,13 +47,13 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   public setConfig(config: UniversalDeviceCardConfig): void {
     this.config = this._migrateConfig(config);
     this._updateDeviceInfo();
-    this._updateStackConfig();
+    this._createChildCards();
   }
 
   set hass(hass: HomeAssistant) {
     this._hass = hass;
     this._updateDeviceInfo();
-    this._updateStackHass();
+    this._updateChildCardsHass();
   }
 
   get hass(): HomeAssistant | undefined {
@@ -53,32 +61,9 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   protected firstUpdated() {
-    this._initStackCard();
-    this._loadComponents();
-  }
-
-  private _initStackCard() {
-    this._stackCard = this.shadowRoot?.querySelector('.cards-stack') as HuiStackCard;
-    if (this._stackCard) {
-      this._updateStackConfig();
-      this._updateStackHass();
-      this._stackCard.addEventListener('ll-rebuild', () => {
-        setTimeout(() => this._styleCards(), 100);
-      });
-    }
-  }
-
-  private _updateStackConfig() {
-    if (this._stackCard && this.config?.cards) {
-      this._stackCard.setConfig({ cards: this.config.cards, type: 'vertical-stack' });
-      setTimeout(() => this._styleCards(), 100);
-    }
-  }
-
-  private _updateStackHass() {
-    if (this._stackCard && this._hass) {
-      this._stackCard.hass = this._hass;
-      setTimeout(() => this._styleCards(), 100);
+    if (this.config?.cards) {
+      const topCardsElement = this.shadowRoot?.querySelector('.cards') as HuiStackCard;
+      topCardsElement?.setConfig({ cards: this.config.cards, type: 'vertical-stack' });
     }
   }
 
@@ -171,23 +156,57 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     return '';
   }
 
-  private async _loadComponents(): Promise<void> {
+  private async _createChildCards(): Promise<void> {
+    if (!this.config.cards?.length) {
+      this.childCards = [];
+      this.requestUpdate();
+      return;
+    }
+
     try {
-      await loadHaComponents();
-      this._componentsLoaded = true;
+      const helpers = await loadCardHelpers();
+      const cards: LovelaceCard[] = [];
+
+      for (const cardConfig of this.config.cards) {
+        try {
+          const element = helpers.createCardElement(cardConfig) as LovelaceCard;
+          if (this._hass) {
+            element.hass = this._hass;
+          }
+
+          element.addEventListener('ll-rebuild', () => {
+            this._createChildCards();
+          });
+
+          cards.push(element);
+        } catch (e) {
+          console.error('Failed to create card:', cardConfig, e);
+        }
+      }
+
+      this.childCards = cards;
+      this.requestUpdate();
+
+      await this.updateComplete;
+      setTimeout(() => this._styleCards(), 100);
     } catch (e) {
-      console.warn('Failed to load HA components:', e);
+      console.error('Failed to load card helpers:', e);
+      this.childCards = [];
+    }
+  }
+
+  private _updateChildCardsHass(): void {
+    if (this.childCards && this._hass) {
+      for (const card of this.childCards) {
+        card.hass = this._hass;
+      }
+      setTimeout(() => this._styleCards(), 100);
     }
   }
 
   private _styleCards(): void {
-    if (!this._stackCard) return;
-    
-    const childCards = this._stackCard.shadowRoot?.querySelectorAll('.card');
-    if (childCards) {
-      childCards.forEach((card: any) => {
-        this._styleCardElementRecursive(card, 0);
-      });
+    for (const card of this.childCards) {
+      this._styleCardElementRecursive(card, 0);
     }
   }
 
@@ -349,7 +368,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   }
 
   protected render() {
-    if (!this.config || !this._hass || !this._componentsLoaded) {
+    if (!this.config || !this._hass) {
       return html`<ha-card><div class="loading">Loading...</div></ha-card>`;
     }
 
@@ -374,9 +393,13 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
           </div>
         </div>
 
-        <div class="cards-container">
-          <hui-vertical-stack-card class="cards-stack"></hui-vertical-stack-card>
-        </div>
+        ${this.childCards.length > 0
+          ? html`
+              <div class="cards-container">
+                ${this.childCards.map((card) => html`${card}`)}
+              </div>
+            `
+          : nothing}
       </ha-card>
     `;
   }
@@ -503,11 +526,9 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
 
       .cards-container {
         padding: 12px 16px;
-      }
-
-      /* Стили для внутреннего стека */
-      .cards-stack {
-        --ha-card-border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
       }
 
       @media (max-width: 600px) {
@@ -533,6 +554,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
 
         .cards-container {
           padding: 8px 12px;
+          gap: 8px;
         }
 
         .badge {
@@ -550,11 +572,15 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   public async getCardSize(): Promise<number> {
     let size = 1;
     
-    if (this._stackCard && typeof this._stackCard.getCardSize === 'function') {
-      const stackSize = await this._stackCard.getCardSize();
-      size += stackSize;
-    } else {
-      size += 3;
+    if (this.childCards) {
+      for (const card of this.childCards) {
+        if (typeof card.getCardSize === 'function') {
+          const cardSize = await card.getCardSize();
+          size += cardSize;
+        } else {
+          size += 1;
+        }
+      }
     }
     
     return size;
