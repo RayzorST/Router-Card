@@ -1,8 +1,15 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { fireEvent, LovelaceCardEditor } from 'custom-card-helpers';
+import { fireEvent } from 'custom-card-helpers';
 import type { UniversalDeviceCardConfig, BadgeConfig } from './types/config';
 import { getLocalizedStringForHass } from './localization';
+import type { HASSDomEvent } from '@hass/common/dom/fire_event';
+import type { LovelaceConfig } from '@hass/data/lovelace/config/types';
+import type { SelectSelector } from '@hass/data/selector';
+import type { StackCardConfig } from '@hass/panels/lovelace/cards/types';
+import type { ConfigChangedEvent } from '@hass/panels/lovelace/editor/hui-element-editor';
+import type { LovelaceCardEditor } from '@hass/panels/lovelace/types';
+import type { HomeAssistant } from '@hass/types';
 
 const BADGE_TYPES = [
   { value: 'entity', label_key: 'editor.badge_types.entity' },
@@ -86,12 +93,10 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
     return migrated;
   }
 
-  protected firstUpdated(): void {
-    this._hideStackTitle();
-  }
-
   protected updated(): void {
-    this._hideStackTitle();
+    if (this._selectedTab === 'cards') {
+      this._hideStackTitle();
+    }
   }
 
   private _hideStackTitle(): void {
@@ -223,7 +228,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         </ha-expansion-panel>
       </div>
     `;
-  }
+  } 
 
   private _getDeviceName(): string {
     if (!this.hass || !this._config?.device_id) return '';
@@ -237,6 +242,7 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
 
     return html`
       <div class="tab-content">
+        <!-- ✅ Поле имени карточки — САМОЕ ПЕРВОЕ -->
         <ha-textfield
           .label=${this._t('editor.card_name')}
           .placeholder=${deviceName || this._t('editor.card_name_placeholder')}
@@ -301,25 +307,23 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
 
     return html`
       <div class="editor">
-        <div class="toolbar">
-          <ha-tab-group @wa-tab-show=${this._handleTabSelected}>
-            ${TABS.map(
-              (tab) => html`
-                <ha-tab-group-tab
-                  slot="nav"
-                  .id=${tab.id}
-                  .panel=${tab.id}
-                  .active=${this._selectedTab === tab.id}
-                >
-                  <div class="tab-label">
-                    <ha-icon icon="${tab.icon}"></ha-icon>
-                    ${this._t(`editor.tabs.${tab.id}`) || tab.label}
-                  </div>
-                </ha-tab-group-tab>
-              `
-            )}
-          </ha-tab-group>
-        </div>
+        <ha-tab-group @wa-tab-show=${this._handleTabSelected}>
+          ${TABS.map(
+            (tab) => html`
+              <ha-tab-group-tab
+                slot="nav"
+                .id=${tab.id}
+                .panel=${tab.id}
+                .active=${this._selectedTab === tab.id}
+              >
+                <div class="tab-label">
+                  <ha-icon icon="${tab.icon}"></ha-icon>
+                  ${this._t(`editor.tabs.${tab.id}`) || tab.label}
+                </div>
+              </ha-tab-group-tab>
+            `
+          )}
+        </ha-tab-group>
 
         ${this._selectedTab === 'settings' ? this._renderSettingsTab() : nothing}
         ${this._selectedTab === 'badges' ? this._renderBadgesTab() : nothing}
@@ -333,7 +337,6 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
       .editor {
         display: flex;
         flex-direction: column;
-        gap: 0;
       }
 
       .loading {
@@ -342,14 +345,17 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         color: var(--secondary-text-color);
       }
 
-      .toolbar {
-        border-bottom: 1px solid var(--divider-color, #e0e0e0);
+      /* Табы на всю ширину как в go-hass-cards */
+      ha-tab-group {
+        --ha-tab-group-tab-flex: 1;
       }
 
       .tab-label {
         display: flex;
         align-items: center;
+        justify-content: center;
         gap: 6px;
+        width: 100%;
       }
 
       .tab-content {

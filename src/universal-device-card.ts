@@ -1,26 +1,17 @@
+// src/universal-device-card.ts
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import type { HomeAssistant, LovelaceCard, LovelaceCardEditor } from 'custom-card-helpers';
+import type { HomeAssistant } from './hass/types';
+import type { LovelaceCard, LovelaceCardEditor } from './hass/panels/lovelace/types';
+import type { BadgeConfig, UniversalDeviceCardConfig } from './types/config';
 import { loadHaComponents } from '@kipk/load-ha-components';
 import { getLocalizedStringForHass } from './localization';
 import { loadCardHelpers } from './utils/editor-utils';
-import type { UniversalDeviceCardConfig, BadgeConfig } from './types/config';
+
+// Сайд-эффект импорт для регистрации редактора
+import './universal-device-card-editor';
 
 const DEFAULT_ICON = 'mdi:devices';
-
-interface ExtendedHomeAssistant extends HomeAssistant {
-  devices: Record<string, DeviceInfo>;
-}
-
-interface DeviceInfo {
-  name?: string;
-  name_by_user?: string;
-  manufacturer?: string;
-  model?: string;
-  model_id?: string;
-  area_id?: string;
-  [key: string]: any;
-}
 
 @customElement('universal-device-card')
 export class UniversalDeviceCard extends LitElement implements LovelaceCard {
@@ -30,20 +21,18 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
   @state() private _deviceName?: string;
   @state() private _deviceModel?: string;
 
-  private _hass?: ExtendedHomeAssistant;
+  private _hass?: HomeAssistant;
 
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
+    // Триггерим ленивую загрузку редактора стека из HA (как в go-hass-cards)
     const stackCard = document.createElement('hui-vertical-stack-card');
     if (
       'getConfigElement' in stackCard.constructor &&
       typeof (stackCard.constructor as any).getConfigElement === 'function'
     ) {
-      await (stackCard.constructor as any).getConfigElement();
+      (stackCard.constructor as any).getConfigElement();
     }
 
-    await customElements.whenDefined('hui-stack-card-editor');
-
-    await import('./universal-device-card-editor');
     return document.createElement('universal-device-card-editor') as unknown as LovelaceCardEditor;
   }
 
@@ -64,13 +53,13 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     this._loadComponents();
   }
 
-  set hass(hass: ExtendedHomeAssistant) {
+  set hass(hass: HomeAssistant) {
     this._hass = hass;
     this._updateDeviceInfo();
     this._updateChildCardsHass();
   }
 
-  get hass(): ExtendedHomeAssistant | undefined {
+  get hass(): HomeAssistant | undefined {
     return this._hass;
   }
 
@@ -134,7 +123,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
 
     const device = this._hass.devices[this._config.device_id];
     if (device) {
-      this._deviceName = device.name_by_user || device.name;
+      this._deviceName = device.name_by_user || device.name || undefined;
       const modelParts = [device.manufacturer, device.model, device.model_id].filter(Boolean);
       this._deviceModel = modelParts.join(' ') || undefined;
     } else {
@@ -265,7 +254,9 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
         });
       }
 
-      const containers = element.shadowRoot.querySelectorAll('#root, #card, .cards, .card-content, .content');
+      const containers = element.shadowRoot.querySelectorAll(
+        '#root, #card, .cards, .card-content, .content'
+      );
       containers.forEach((container: any) => {
         if (container.children) {
           for (let i = 0; i < container.children.length; i++) {
@@ -368,7 +359,8 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
             if (!this._isUpdateAvailable(badge.entity_id)) return nothing;
           }
 
-          const badgeClass = badge.type === 'update' ? 'update' : badge.type === 'action' ? 'action' : '';
+          const badgeClass =
+            badge.type === 'update' ? 'update' : badge.type === 'action' ? 'action' : '';
 
           return html`
             <div class="badge ${badgeClass}" @click=${() => this._handleBadgeClick(badge)}>
@@ -437,7 +429,6 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
         color: var(--secondary-text-color);
       }
 
-      /* Header */
       .header {
         padding: 12px 16px;
         border-bottom: 1px solid var(--divider-color, #e0e0e0);
@@ -494,7 +485,6 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
         flex-shrink: 0;
       }
 
-      /* Badges */
       .badges {
         display: flex;
         align-items: center;
@@ -540,7 +530,6 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
         color: #fff;
       }
 
-      /* Cards Container */
       .cards-container {
         padding: 12px 16px;
         display: flex;
@@ -548,7 +537,6 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
         gap: 12px;
       }
 
-      /* Mobile */
       @media (max-width: 600px) {
         .header {
           padding: 10px 12px;
@@ -589,15 +577,14 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
 
   public getCardSize(): number {
     let size = 1;
-
     for (const card of this._childCards) {
       if (typeof card.getCardSize === 'function') {
-        size += card.getCardSize();
+        const result = card.getCardSize();
+        size += typeof result === 'number' ? result : 1;
       } else {
         size += 1;
       }
     }
-
     return size;
   }
 }
