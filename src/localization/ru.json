@@ -5,28 +5,34 @@
     "update": "Обновление"
   },
   "editor": {
+    "loading": "Загрузка...",
+    "tabs": {
+      "settings": "Настройки",
+      "badges": "Бейджи",
+      "cards": "Карточки"
+    },
+    "card_name": "Имя карточки",
+    "card_name_placeholder": "Оставьте пустым для имени устройства",
+    "card_name_hint": "Сейчас отображается: {{name}}",
     "device": "Устройство",
     "display": "Отображение",
-    "title": "Заголовок",
-    "title_placeholder": "Оставьте пустым для использования имени устройства",
     "icon": "Иконка",
-    "chips": "Чипсы",
-    "add_chip": "Добавить чипс",
-    "chip_type": "Тип",
-    "chip_label": "Метка",
-    "chip_icon": "Иконка",
-    "chip_entity": "Сущность",
-    "chip_template": "Шаблон",
-    "chip_visibility": "Условия видимости",
-    "chip_show_when_entity": "Показывать когда сущность",
-    "chip_show_when_state": "Имеет состояние",
-    "chip_types": {
+    "badges": "Бейджи",
+    "add_badge": "Добавить бейдж",
+    "badge_type": "Тип",
+    "badge_label": "Метка",
+    "badge_icon": "Иконка",
+    "badge_entity": "Сущность",
+    "badge_template": "Шаблон",
+    "badge_visibility": "Условия видимости",
+    "badge_show_when_entity": "Показывать когда сущность",
+    "badge_show_when_state": "Имеет состояние",
+    "badge_types": {
       "entity": "Состояние сущности",
       "update": "Доступно обновление",
       "action": "Кнопка действия",
       "template": "Шаблон"
     },
-    "cards": "Карточки",
-    "loading": "Загрузка..."
+    "cards": "Карточки"
   }
 }

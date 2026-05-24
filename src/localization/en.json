@@ -5,28 +5,34 @@
     "update": "Update"
   },
   "editor": {
+    "loading": "Loading...",
+    "tabs": {
+      "settings": "Settings",
+      "badges": "Badges",
+      "cards": "Cards"
+    },
+    "card_name": "Card Name",
+    "card_name_placeholder": "Leave empty to use device name",
+    "card_name_hint": "Currently showing: {{name}}",
     "device": "Device",
     "display": "Display",
-    "title": "Title",
-    "title_placeholder": "Leave empty to use device name",
     "icon": "Icon",
-    "chips": "Chips",
-    "add_chip": "Add Chip",
-    "chip_type": "Type",
-    "chip_label": "Label",
-    "chip_icon": "Icon",
-    "chip_entity": "Entity",
-    "chip_template": "Template",
-    "chip_visibility": "Visibility Conditions",
-    "chip_show_when_entity": "Show when entity",
-    "chip_show_when_state": "Has state",
-    "chip_types": {
+    "badges": "Badges",
+    "add_badge": "Add Badge",
+    "badge_type": "Type",
+    "badge_label": "Label",
+    "badge_icon": "Icon",
+    "badge_entity": "Entity",
+    "badge_template": "Template",
+    "badge_visibility": "Visibility Conditions",
+    "badge_show_when_entity": "Show when entity",
+    "badge_show_when_state": "Has state",
+    "badge_types": {
       "entity": "Entity State",
       "update": "Update Available",
       "action": "Action Button",
       "template": "Template"
     },
-    "cards": "Cards",
-    "loading": "Loading..."
+    "cards": "Cards"
   }
 }
