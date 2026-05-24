@@ -1,24 +1,30 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing  } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { fireEvent, LovelaceCardEditor } from 'custom-card-helpers';
-import type { UniversalDeviceCardConfig, ChipConfig } from './types/config';
+import type { UniversalDeviceCardConfig, BadgeConfig } from './types/config';
 import { getLocalizedStringForHass } from './localization';
 
-const CHIP_TYPES = [
-  { value: 'entity', label_key: 'editor.chip_types.entity' },
-  { value: 'update', label_key: 'editor.chip_types.update' },
-  { value: 'action', label_key: 'editor.chip_types.action' },
-  { value: 'template', label_key: 'editor.chip_types.template' },
+const BADGE_TYPES = [
+  { value: 'entity', label_key: 'editor.badge_types.entity' },
+  { value: 'update', label_key: 'editor.badge_types.update' },
+  { value: 'action', label_key: 'editor.badge_types.action' },
+  { value: 'template', label_key: 'editor.badge_types.template' },
 ] as const;
 
 @customElement('universal-device-card-editor')
 export class UniversalDeviceCardEditor extends LitElement implements LovelaceCardEditor {
   @property({ attribute: false }) public hass!: any;
   @property({ attribute: false }) public lovelace?: any;
-  
+
   @state() private _config!: UniversalDeviceCardConfig;
 
   private _t(key: string, params?: Record<string, string>): string {
+    if (!this.hass) {
+      const parts = key.split('.');
+      return parts[parts.length - 1]
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    }
     return getLocalizedStringForHass(this.hass, key, params);
   }
 
@@ -29,35 +35,36 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
       name: migrated.name || '',
       icon: migrated.icon || 'mdi:devices',
       device_id: migrated.device_id || '',
-      chips: migrated.chips || [],
+      badges: migrated.badges || [],
       cards: migrated.cards || [],
     };
   }
 
   private _migrateConfig(config: any): UniversalDeviceCardConfig {
     const migrated = { ...config };
-  
-    delete migrated.controller;
 
-    if (migrated.reboot_button && !migrated.action_button) {
-      migrated.action_button = migrated.reboot_button;
-    }
+    delete migrated.controller;
     delete migrated.reboot_button;
 
-    if (!migrated.chips) {
-      migrated.chips = [];
-      
+    if (migrated.chips && !migrated.badges) {
+      migrated.badges = migrated.chips;
+    }
+    delete migrated.chips;
+
+    if (!migrated.badges) {
+      migrated.badges = [];
+
       if (migrated.update_section?.enabled !== false && migrated.update_section?.entity) {
-        migrated.chips.push({
+        migrated.badges.push({
           type: 'update',
           entity_id: migrated.update_section.entity,
           label: migrated.update_section.label || this._t('common.update'),
           tap_action: migrated.update_section.tap_action || { action: 'more-info' },
         });
       }
-      
+
       if (migrated.action_button?.enabled !== false && migrated.action_button?.entity) {
-        migrated.chips.push({
+        migrated.badges.push({
           type: 'action',
           icon: migrated.action_button.icon || 'mdi:restart',
           label: migrated.action_button.label || this._t('common.reboot'),
@@ -66,10 +73,10 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         });
       }
     }
-    
+
     delete migrated.update_section;
     delete migrated.action_button;
-    
+
     return migrated;
   }
 
@@ -106,101 +113,107 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
     }
   }
 
-  private _addChip(): void {
-    const chips = [...(this._config.chips || [])];
-    chips.push({
+  private _addBadge(): void {
+    const badges = [...(this._config.badges || [])];
+    badges.push({
       type: 'entity',
-      icon: 'mdi:chip',
+      icon: 'mdi:badge-account',
       label: '',
       entity_id: '',
       tap_action: { action: 'more-info' },
     });
-    this._updateConfig({ chips });
+    this._updateConfig({ badges });
   }
 
-  private _removeChip(index: number): void {
-    const chips = [...(this._config.chips || [])];
-    chips.splice(index, 1);
-    this._updateConfig({ chips });
+  private _removeBadge(index: number): void {
+    const badges = [...(this._config.badges || [])];
+    badges.splice(index, 1);
+    this._updateConfig({ badges });
   }
 
-  private _updateChip(index: number, changes: Partial<ChipConfig>): void {
-    const chips = [...(this._config.chips || [])];
-    chips[index] = { ...chips[index], ...changes };
-    this._updateConfig({ chips });
+  private _updateBadge(index: number, changes: Partial<BadgeConfig>): void {
+    const badges = [...(this._config.badges || [])];
+    badges[index] = { ...badges[index], ...changes };
+    this._updateConfig({ badges });
   }
 
-  private _renderChipEditor(chip: ChipConfig, index: number) {
-    const chipTypes = CHIP_TYPES.map(t => ({
+  private _renderBadgeEditor(badge: BadgeConfig, index: number) {
+    const badgeTypes = BADGE_TYPES.map((t) => ({
       value: t.value,
       label: this._t(t.label_key),
     }));
 
     return html`
-      <div class="chip-item">
-        <div class="chip-item-header">
-          <ha-icon .icon=${chip.icon || 'mdi:chip'}></ha-icon>
-          <span>${this._t('editor.chips')} ${index + 1}</span>
-          <ha-icon-button
-            .label=${'Remove'}
-            @click=${() => this._removeChip(index)}
-          >
+      <div class="badge-item">
+        <div class="badge-item-header">
+          <ha-icon .icon=${badge.icon || 'mdi:badge-account'}></ha-icon>
+          <span>${this._t('editor.badges')} ${index + 1}</span>
+          <ha-icon-button .label=${'Remove'} @click=${() => this._removeBadge(index)}>
             <ha-icon icon="mdi:close"></ha-icon>
           </ha-icon-button>
         </div>
 
         <ha-selector
           .hass=${this.hass}
-          .label=${this._t('editor.chip_type')}
-          .value=${chip.type}
-          .selector=${{ select: { options: chipTypes } }}
-          @value-changed=${(e: CustomEvent) => this._updateChip(index, { type: e.detail.value })}
+          .label=${this._t('editor.badge_type')}
+          .value=${badge.type}
+          .selector=${{ select: { options: badgeTypes } }}
+          @value-changed=${(e: CustomEvent) => this._updateBadge(index, { type: e.detail.value })}
         ></ha-selector>
 
         <ha-textfield
-          .label=${this._t('editor.chip_label')}
-          .value=${chip.label || ''}
-          @change=${(e: Event) => this._updateChip(index, { label: (e.target as HTMLInputElement).value })}
+          .label=${this._t('editor.badge_label')}
+          .value=${badge.label || ''}
+          @change=${(e: Event) => this._updateBadge(index, { label: (e.target as HTMLInputElement).value })}
         ></ha-textfield>
 
         <ha-icon-picker
           .hass=${this.hass}
-          .label=${this._t('editor.chip_icon')}
-          .value=${chip.icon || ''}
-          @value-changed=${(e: CustomEvent) => this._updateChip(index, { icon: e.detail.value })}
+          .label=${this._t('editor.badge_icon')}
+          .value=${badge.icon || ''}
+          @value-changed=${(e: CustomEvent) => this._updateBadge(index, { icon: e.detail.value })}
         ></ha-icon-picker>
 
-        ${chip.type !== 'template' ? html`
-          <ha-entity-picker
-            .hass=${this.hass}
-            .label=${this._t('editor.chip_entity')}
-            .value=${chip.entity_id || ''}
-            @value-changed=${(e: CustomEvent) => this._updateChip(index, { entity_id: e.detail.value })}
-          ></ha-entity-picker>
-        ` : html`
-          <ha-textfield
-            .label=${this._t('editor.chip_template')}
-            .value=${chip.template || ''}
-            @change=${(e: Event) => this._updateChip(index, { template: (e.target as HTMLInputElement).value })}
-          ></ha-textfield>
-        `}
+        ${badge.type !== 'template'
+          ? html`
+              <ha-entity-picker
+                .hass=${this.hass}
+                .label=${this._t('editor.badge_entity')}
+                .value=${badge.entity_id || ''}
+                @value-changed=${(e: CustomEvent) =>
+                  this._updateBadge(index, { entity_id: e.detail.value })}
+              ></ha-entity-picker>
+            `
+          : html`
+              <ha-textfield
+                .label=${this._t('editor.badge_template')}
+                .value=${badge.template || ''}
+                @change=${(e: Event) =>
+                  this._updateBadge(index, { template: (e.target as HTMLInputElement).value })}
+              ></ha-textfield>
+            `}
 
-        <ha-expansion-panel .header=${this._t('editor.chip_visibility')}>
+        <ha-expansion-panel .header=${this._t('editor.badge_visibility')}>
           <div class="visibility-fields">
             <ha-entity-picker
               .hass=${this.hass}
-              .label=${this._t('editor.chip_show_when_entity')}
-              .value=${chip.show_when?.entity_id || ''}
-              @value-changed=${(e: CustomEvent) => this._updateChip(index, {
-                show_when: { ...chip.show_when, entity_id: e.detail.value }
-              })}
+              .label=${this._t('editor.badge_show_when_entity')}
+              .value=${badge.show_when?.entity_id || ''}
+              @value-changed=${(e: CustomEvent) =>
+                this._updateBadge(index, {
+                  show_when: { ...badge.show_when, entity_id: e.detail.value },
+                })}
             ></ha-entity-picker>
             <ha-textfield
-              .label=${this._t('editor.chip_show_when_state')}
-              .value=${chip.show_when?.state || ''}
-              @change=${(e: Event) => this._updateChip(index, {
-                show_when: { ...chip.show_when, state: (e.target as HTMLInputElement).value }
-              })}
+              .label=${this._t('editor.badge_show_when_state')}
+              .value=${badge.show_when?.state || ''}
+              @change=${(e: Event) =>
+                this._updateBadge(index, {
+                  show_when: {
+                    ...badge.show_when,
+                    state: (e.target as HTMLInputElement).value,
+                  },
+                })}
             ></ha-textfield>
           </div>
         </ha-expansion-panel>
@@ -208,52 +221,74 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
     `;
   }
 
+  private _getDeviceName(): string {
+    if (!this.hass || !this._config?.device_id) return '';
+    const device = this.hass.devices?.[this._config.device_id];
+    if (!device) return '';
+    return device.name_by_user || device.name || '';
+  }
+
   render() {
-    if (!this.hass || !this._config) {
+    if (!this._config) {
       return html`<div class="loading">${this._t('editor.loading')}</div>`;
     }
 
-    const chips = this._config.chips || [];
+    const badges = this._config.badges || [];
+    const deviceName = this._getDeviceName();
 
     return html`
       <div class="editor">
+        <!-- Card Name - САМОЕ ПЕРВОЕ ПОЛЕ -->
+        <div class="section">
+          <ha-textfield
+            .label=${this._t('editor.card_name')}
+            .placeholder=${deviceName || this._t('editor.card_name_placeholder')}
+            .value=${this._config.name || ''}
+            @change=${(e: Event) =>
+              this._updateConfig({ name: (e.target as HTMLInputElement).value })}
+          ></ha-textfield>
+          ${!this._config.name
+            ? html`
+                <div class="hint">
+                  ${this._t('editor.card_name_hint', { name: deviceName || 'Device' })}
+                </div>
+              `
+            : nothing}
+        </div>
+
         <!-- Device -->
         <div class="section">
           <h3>${this._t('editor.device')}</h3>
           <ha-device-picker
             .hass=${this.hass}
             .value=${this._config.device_id || ''}
-            @value-changed=${(e: CustomEvent) => this._updateConfig({ device_id: e.detail.value })}
+            @value-changed=${(e: CustomEvent) =>
+              this._updateConfig({ device_id: e.detail.value })}
           ></ha-device-picker>
         </div>
 
         <!-- Display -->
         <div class="section">
           <h3>${this._t('editor.display')}</h3>
-          <ha-textfield
-            .label=${this._t('editor.title')}
-            .placeholder=${this._t('editor.title_placeholder')}
-            .value=${this._config.name || ''}
-            @change=${(e: Event) => this._updateConfig({ name: (e.target as HTMLInputElement).value })}
-          ></ha-textfield>
           <ha-icon-picker
             .hass=${this.hass}
             .label=${this._t('editor.icon')}
             .value=${this._config.icon || 'mdi:devices'}
-            @value-changed=${(e: CustomEvent) => this._updateConfig({ icon: e.detail.value })}
+            @value-changed=${(e: CustomEvent) =>
+              this._updateConfig({ icon: e.detail.value })}
           ></ha-icon-picker>
         </div>
 
-        <!-- Chips -->
+        <!-- Badges -->
         <div class="section">
           <div class="section-header">
-            <h3>${this._t('editor.chips')}</h3>
-            <ha-button @click=${this._addChip}>
+            <h3>${this._t('editor.badges')}</h3>
+            <ha-button @click=${this._addBadge}>
               <ha-icon icon="mdi:plus" slot="icon"></ha-icon>
-              ${this._t('editor.add_chip')}
+              ${this._t('editor.add_badge')}
             </ha-button>
           </div>
-          ${chips.map((chip, i) => this._renderChipEditor(chip, i))}
+          ${badges.map((badge, i) => this._renderBadgeEditor(badge, i))}
         </div>
 
         <!-- Cards -->
@@ -277,13 +312,13 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         flex-direction: column;
         gap: 8px;
       }
-      
+
       .loading {
         padding: 16px;
         text-align: center;
         color: var(--secondary-text-color);
       }
-      
+
       .section {
         background: var(--card-background-color, #fff);
         border: 1px solid var(--divider-color, #e0e0e0);
@@ -293,21 +328,27 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         flex-direction: column;
         gap: 12px;
       }
-      
+
       .section h3 {
         margin: 0;
         font-size: 16px;
         font-weight: 500;
         color: var(--primary-text-color);
       }
-      
+
       .section-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
       }
-      
-      .chip-item {
+
+      .hint {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        font-style: italic;
+      }
+
+      .badge-item {
         border: 1px solid var(--divider-color, #e0e0e0);
         border-radius: 6px;
         padding: 12px;
@@ -315,26 +356,26 @@ export class UniversalDeviceCardEditor extends LitElement implements LovelaceCar
         flex-direction: column;
         gap: 8px;
       }
-      
-      .chip-item-header {
+
+      .badge-item-header {
         display: flex;
         align-items: center;
         gap: 8px;
         font-size: 14px;
         font-weight: 500;
       }
-      
-      .chip-item-header ha-icon-button {
+
+      .badge-item-header ha-icon-button {
         margin-left: auto;
       }
-      
+
       .visibility-fields {
         display: flex;
         flex-direction: column;
         gap: 8px;
         padding-top: 8px;
       }
-      
+
       ha-textfield {
         display: block;
       }

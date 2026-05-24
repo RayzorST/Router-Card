@@ -1,4 +1,6 @@
-export interface ChipConfig {
+// src/types/config.ts
+
+export interface BadgeConfig {
   type: 'entity' | 'update' | 'action' | 'template';
   icon?: string;
   label?: string;
@@ -22,8 +24,9 @@ export interface UniversalDeviceCardConfig {
   name?: string;
   icon?: string;
   device_id?: string;
-  chips?: ChipConfig[];
+  badges?: BadgeConfig[];
   cards?: any[];
+  chips?: BadgeConfig[]; // Для обратной совместимости
   update_section?: {
     enabled?: boolean;
     entity?: string;
@@ -37,6 +40,7 @@ export interface UniversalDeviceCardConfig {
     icon?: string;
     label?: string;
     tap_action?: any;
+    service_data?: Record<string, any>;
   };
   controller?: any;
   reboot_button?: any;

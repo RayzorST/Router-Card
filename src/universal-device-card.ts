@@ -1,10 +1,10 @@
 import { LitElement, html, css, nothing } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
 import type { HomeAssistant, LovelaceCard, LovelaceCardEditor } from 'custom-card-helpers';
 import { loadHaComponents } from '@kipk/load-ha-components';
 import { getLocalizedStringForHass } from './localization';
 import { loadCardHelpers } from './utils/editor-utils';
-import type { UniversalDeviceCardConfig, ChipConfig } from './types/config';
+import type { UniversalDeviceCardConfig, BadgeConfig } from './types/config';
 
 const DEFAULT_ICON = 'mdi:devices';
 
@@ -38,8 +38,10 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
       'getConfigElement' in stackCard.constructor &&
       typeof (stackCard.constructor as any).getConfigElement === 'function'
     ) {
-      (stackCard.constructor as any).getConfigElement();
+      await (stackCard.constructor as any).getConfigElement();
     }
+
+    await customElements.whenDefined('hui-stack-card-editor');
 
     await import('./universal-device-card-editor');
     return document.createElement('universal-device-card-editor') as unknown as LovelaceCardEditor;
@@ -51,7 +53,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
       name: '',
       icon: DEFAULT_ICON,
       device_id: '',
-      chips: [],
+      badges: [],
       cards: [],
     };
   }
@@ -78,11 +80,16 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     delete migrated.controller;
     delete migrated.reboot_button;
 
-    if (!migrated.chips) {
-      migrated.chips = [];
+    if (migrated.chips && !migrated.badges) {
+      migrated.badges = migrated.chips;
+    }
+    delete migrated.chips;
+
+    if (!migrated.badges) {
+      migrated.badges = [];
 
       if (migrated.update_section?.enabled !== false && migrated.update_section?.entity) {
-        migrated.chips.push({
+        migrated.badges.push({
           type: 'update',
           entity_id: migrated.update_section.entity,
           label: migrated.update_section.label || this._t('common.update'),
@@ -91,7 +98,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
       }
 
       if (migrated.action_button?.enabled !== false && migrated.action_button?.entity) {
-        migrated.chips.push({
+        migrated.badges.push({
           type: 'action',
           icon: migrated.action_button.icon || 'mdi:restart',
           label: migrated.action_button.label || this._t('common.reboot'),
@@ -109,11 +116,10 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
       name: migrated.name || '',
       icon: migrated.icon || DEFAULT_ICON,
       device_id: migrated.device_id || '',
-      chips: migrated.chips || [],
+      badges: migrated.badges || [],
       cards: migrated.cards || [],
     };
   }
-
 
   private _t(key: string, params?: Record<string, string>): string {
     return getLocalizedStringForHass(this._hass, key, params);
@@ -217,17 +223,17 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
 
   private _styleCards(): void {
     for (const card of this._childCards) {
-      this._styleCardElement(card);
+      this._styleCardElementRecursive(card, 0);
     }
   }
 
-  private _styleCardElement(element: any): void {
-    if (!element) return;
+  private _styleCardElementRecursive(element: any, depth: number = 0): void {
+    if (!element || depth > 10) return;
 
     const bgColor = 'var(--secondary-background-color, #f5f5f5)';
 
     const setStyles = (el: any) => {
-      if (!el || !el.style) return;
+      if (!el?.style) return;
       el.style.background = bgColor;
       el.style.borderRadius = '8px';
       el.style.margin = '0';
@@ -239,18 +245,54 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
 
     if (element.shadowRoot) {
       const haCard = element.shadowRoot.querySelector('ha-card');
-      if (haCard) setStyles(haCard);
+      if (haCard) {
+        setStyles(haCard);
+      }
+
+      const cardSelectors = [
+        'hui-vertical-stack-card',
+        'hui-horizontal-stack-card',
+        'hui-grid-card',
+        'ha-card',
+        '[class*="card"]',
+      ];
+
+      for (const selector of cardSelectors) {
+        const cards = element.shadowRoot.querySelectorAll(selector);
+        cards.forEach((card: any) => {
+          setStyles(card);
+          this._styleCardElementRecursive(card, depth + 1);
+        });
+      }
+
+      const containers = element.shadowRoot.querySelectorAll('#root, #card, .cards, .card-content, .content');
+      containers.forEach((container: any) => {
+        if (container.children) {
+          for (let i = 0; i < container.children.length; i++) {
+            this._styleCardElementRecursive(container.children[i], depth + 1);
+          }
+        }
+      });
+    }
+
+    if (element.children) {
+      for (let i = 0; i < element.children.length; i++) {
+        const child = element.children[i];
+        if (child !== element) {
+          this._styleCardElementRecursive(child, depth + 1);
+        }
+      }
     }
   }
 
-  private _shouldShowChip(chip: ChipConfig): boolean {
-    if (!chip.show_when?.entity_id || !this._hass) return true;
+  private _shouldShowBadge(badge: BadgeConfig): boolean {
+    if (!badge.show_when?.entity_id || !this._hass) return true;
 
-    const state = this._hass.states[chip.show_when.entity_id];
+    const state = this._hass.states[badge.show_when.entity_id];
     if (!state) return false;
 
-    if (chip.show_when.state !== undefined && chip.show_when.state !== '') {
-      return state.state === chip.show_when.state;
+    if (badge.show_when.state !== undefined && badge.show_when.state !== '') {
+      return state.state === badge.show_when.state;
     }
 
     return true;
@@ -263,20 +305,20 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
     return state.state === 'on';
   }
 
-  private _handleChipClick(chip: ChipConfig): void {
+  private _handleBadgeClick(badge: BadgeConfig): void {
     if (!this._hass) return;
 
-    const action = chip.tap_action;
+    const action = badge.tap_action;
     if (!action || action.action === 'none') return;
 
     switch (action.action) {
       case 'more-info':
-        if (chip.entity_id) {
+        if (badge.entity_id) {
           this.dispatchEvent(
             new CustomEvent('hass-more-info', {
               bubbles: true,
               composed: true,
-              detail: { entityId: chip.entity_id },
+              detail: { entityId: badge.entity_id },
             })
           );
         }
@@ -299,39 +341,39 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
         if (action.service) {
           const [domain, service] = action.service.split('.');
           this._hass.callService(domain, service, action.service_data || {});
-        } else if (chip.entity_id) {
-          const domain = chip.entity_id.split('.')[0];
+        } else if (badge.entity_id) {
+          const domain = badge.entity_id.split('.')[0];
           if (domain === 'button') {
-            this._hass.callService('button', 'press', { entity_id: chip.entity_id });
+            this._hass.callService('button', 'press', { entity_id: badge.entity_id });
           } else if (domain === 'script') {
-            this._hass.callService('script', 'turn_on', { entity_id: chip.entity_id });
+            this._hass.callService('script', 'turn_on', { entity_id: badge.entity_id });
           } else if (domain === 'switch' || domain === 'light' || domain === 'input_boolean') {
-            this._hass.callService('homeassistant', 'toggle', { entity_id: chip.entity_id });
+            this._hass.callService('homeassistant', 'toggle', { entity_id: badge.entity_id });
           }
         }
         break;
     }
   }
 
-  private _renderChips() {
-    const chips = this._config.chips || [];
-    if (!chips.length) return nothing;
+  private _renderBadges() {
+    const badges = this._config.badges || [];
+    if (!badges.length) return nothing;
 
     return html`
-      <div class="chips">
-        ${chips.map((chip) => {
-          if (!this._shouldShowChip(chip)) return nothing;
+      <div class="badges">
+        ${badges.map((badge) => {
+          if (!this._shouldShowBadge(badge)) return nothing;
 
-          if (chip.type === 'update' && chip.entity_id) {
-            if (!this._isUpdateAvailable(chip.entity_id)) return nothing;
+          if (badge.type === 'update' && badge.entity_id) {
+            if (!this._isUpdateAvailable(badge.entity_id)) return nothing;
           }
 
-          const chipClass = chip.type === 'update' ? 'update' : chip.type === 'action' ? 'action' : '';
+          const badgeClass = badge.type === 'update' ? 'update' : badge.type === 'action' ? 'action' : '';
 
           return html`
-            <div class="chip ${chipClass}" @click=${() => this._handleChipClick(chip)}>
-              ${chip.icon ? html`<ha-icon .icon=${chip.icon}></ha-icon>` : nothing}
-              ${chip.label ? html`<span>${chip.label}</span>` : nothing}
+            <div class="badge ${badgeClass}" @click=${() => this._handleBadgeClick(badge)}>
+              ${badge.icon ? html`<ha-icon .icon=${badge.icon}></ha-icon>` : nothing}
+              ${badge.label ? html`<span>${badge.label}</span>` : nothing}
             </div>
           `;
         })}
@@ -360,7 +402,7 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
               </div>
             </div>
             <div class="header-right">
-              ${this._renderChips()}
+              ${this._renderBadges()}
             </div>
           </div>
         </div>
@@ -452,15 +494,15 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
         flex-shrink: 0;
       }
 
-      /* Chips */
-      .chips {
+      /* Badges */
+      .badges {
         display: flex;
         align-items: center;
         gap: 6px;
         flex-wrap: wrap;
       }
 
-      .chip {
+      .badge {
         cursor: pointer;
         transition: all 0.2s;
         padding: 4px 10px;
@@ -476,24 +518,24 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
         user-select: none;
       }
 
-      .chip:hover {
+      .badge:hover {
         filter: brightness(0.95);
       }
 
-      .chip:active {
+      .badge:active {
         transform: scale(0.97);
       }
 
-      .chip ha-icon {
+      .badge ha-icon {
         --mdc-icon-size: 14px;
       }
 
-      .chip.update {
+      .badge.update {
         background: var(--warning-color, #ff9800);
         color: #fff;
       }
 
-      .chip.action {
+      .badge.action {
         background: var(--primary-color, #03a9f4);
         color: #fff;
       }
@@ -533,12 +575,12 @@ export class UniversalDeviceCard extends LitElement implements LovelaceCard {
           gap: 8px;
         }
 
-        .chip {
+        .badge {
           padding: 3px 8px;
           font-size: 11px;
         }
 
-        .chip ha-icon {
+        .badge ha-icon {
           --mdc-icon-size: 12px;
         }
       }
